@@ -55,7 +55,9 @@ export function createEditor(element, pageId, userName, onSave) {
   const extensions = [
     StarterKit.configure({
       history: false, // Yjs handles undo/redo
+      undoRedo: false, // Collaboration extension provides its own
       codeBlock: false, // We use the standalone extension
+      link: false, // We configure Link separately below
     }),
     CodeBlock,
     Placeholder.configure({
