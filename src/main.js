@@ -1,6 +1,6 @@
 // Insel-Wiki — Main Application Bootstrap
 import { initAuth, onAuthChange, login, logout, isLoggedIn, canEdit, getCurrentUser, getAccessRequestLink } from './firebase/auth.js';
-import { createPage, getPage, savePage, createHistorySnapshot, compactHistory, updatePageTitle, deletePage, getChildren, subscribeToPage } from './firebase/firestore.js';
+import { createPage, getPage, savePage, createHistorySnapshot, compactHistory, updatePageTitle, deletePage, restorePage, getDeletedPages, permanentlyDeletePage, getChildren, subscribeToPage } from './firebase/firestore.js';
 import { createEditor, setContent, getMarkdown, setEditable, destroyEditor, createFormatToolbar } from './editor/editor.js';
 import { initSidebar, setActivePage, getBreadcrumb } from './components/sidebar.js';
 import { loadHistory, toggleHistoryPanel, closeHistoryPanel } from './components/history.js';
@@ -322,7 +322,7 @@ async function handleNewPage(parentId) {
 
 async function handleDeletePage() {
   if (!canEdit() || !currentPageId) return;
-  const confirmed = confirm('Diese Seite und alle Unterseiten wirklich löschen?');
+  const confirmed = confirm('Diese Seite und alle Unterseiten in den Papierkorb verschieben?');
   if (!confirmed) return;
 
   try {
@@ -339,7 +339,7 @@ async function handleHistoryToggle() {
     toggleHistoryPanel();
     loadHistory(currentPageId);
     // Compact history in the background when viewing it
-    compactHistory(currentPageId).catch(console.warn);
+    // compactHistory(currentPageId).catch(console.warn);
   }
 }
 

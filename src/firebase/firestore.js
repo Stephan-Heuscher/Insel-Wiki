@@ -14,7 +14,8 @@ import {
   onSnapshot,
   serverTimestamp,
   Timestamp,
-  limit
+  limit,
+  writeBatch
 } from 'firebase/firestore';
 
 // --- History compaction settings ---
@@ -159,13 +160,64 @@ export async function updatePageTitle(pageId, title) {
 }
 
 /**
- * Delete a page and all its children recursively
+ * Soft-delete a page and all its children recursively.
+ * Sets `deleted: true` and `deletedAt` timestamp — data is preserved.
  */
 export async function deletePage(pageId) {
-  // Delete children first
+  // Soft-delete children first
   const children = await getChildren(pageId);
   for (const child of children) {
     await deletePage(child.id);
+  }
+
+  // Mark page as deleted
+  const pageRef = doc(db, PAGES_COLLECTION, pageId);
+  await updateDoc(pageRef, {
+    deleted: true,
+    deletedAt: serverTimestamp(),
+  });
+}
+
+/**
+ * Restore a soft-deleted page (and its children).
+ */
+export async function restorePage(pageId) {
+  const pageRef = doc(db, PAGES_COLLECTION, pageId);
+  await updateDoc(pageRef, {
+    deleted: false,
+    deletedAt: null,
+  });
+
+  // Also restore children that were deleted together
+  const pagesRef = collection(db, PAGES_COLLECTION);
+  const q = query(pagesRef, where('parentId', '==', pageId), where('deleted', '==', true));
+  const snapshot = await getDocs(q);
+  for (const child of snapshot.docs) {
+    await restorePage(child.id);
+  }
+}
+
+/**
+ * Get all soft-deleted pages (for the trash view).
+ */
+export async function getDeletedPages() {
+  const pagesRef = collection(db, PAGES_COLLECTION);
+  const q = query(pagesRef, where('deleted', '==', true), orderBy('deletedAt', 'desc'));
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
+/**
+ * Permanently delete a page and all its children + history.
+ * This is irreversible.
+ */
+export async function permanentlyDeletePage(pageId) {
+  // Delete children first
+  const pagesRef = collection(db, PAGES_COLLECTION);
+  const q = query(pagesRef, where('parentId', '==', pageId));
+  const snapshot = await getDocs(q);
+  for (const child of snapshot.docs) {
+    await permanentlyDeletePage(child.id);
   }
 
   // Delete history subcollection
@@ -175,7 +227,7 @@ export async function deletePage(pageId) {
     await deleteDoc(snap.ref);
   }
 
-  // Delete the page itself
+  // Delete the page document
   const pageRef = doc(db, PAGES_COLLECTION, pageId);
   await deleteDoc(pageRef);
 }
@@ -198,7 +250,9 @@ export function subscribeToPages(callback) {
   const pagesRef = collection(db, PAGES_COLLECTION);
   const q = query(pagesRef, orderBy('order', 'asc'));
   return onSnapshot(q, (snapshot) => {
-    const pages = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const pages = snapshot.docs
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .filter((p) => !p.deleted);
     callback(pages);
   });
 }

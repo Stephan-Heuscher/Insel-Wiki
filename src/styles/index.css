@@ -819,6 +819,84 @@ html, body {
   line-height: 1.4;
 }
 
+/* --- Trash / Papierkorb --- */
+.trash-section {
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+}
+
+.trash-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color var(--transition-fast);
+  user-select: none;
+}
+
+.trash-header:hover {
+  color: var(--text-secondary);
+}
+
+.trash-chevron {
+  margin-left: auto;
+  transition: transform var(--transition-fast);
+}
+
+.trash-chevron.expanded {
+  transform: rotate(90deg);
+}
+
+.trash-list {
+  padding: 0 8px 8px;
+}
+
+.trash-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 8px 5px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  transition: all var(--transition-fast);
+}
+
+.trash-item:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+.trash-item-name {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-decoration: line-through;
+  opacity: 0.7;
+}
+
+.trash-item-actions {
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.trash-item:hover .trash-item-actions {
+  opacity: 1;
+}
+
+.trash-empty, .trash-loading {
+  padding: 8px 12px;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+
 /* --- Utility --- */
 .hidden {
   display: none !important;

@@ -1,5 +1,5 @@
 // Sidebar component — hierarchical page tree with real-time updates
-import { subscribeToPages, createPage } from '../firebase/firestore.js';
+import { subscribeToPages, createPage, getDeletedPages, restorePage, permanentlyDeletePage } from '../firebase/firestore.js';
 import { canEdit } from '../firebase/auth.js';
 
 let allPages = [];
@@ -7,6 +7,8 @@ let unsubscribe = null;
 let onNavigateCallback = null;
 let activePageId = null;
 let searchFilter = '';
+let trashExpanded = false;
+let trashContainer = null;
 
 /**
  * Initialize sidebar and start listening to page changes
@@ -18,6 +20,10 @@ export function initSidebar(treeContainer, onNavigate) {
   unsubscribe = subscribeToPages((pages) => {
     allPages = pages;
     renderTree(treeContainer);
+    // Refresh trash if it's open
+    if (trashExpanded && trashContainer) {
+      renderTrash(trashContainer);
+    }
   });
 
   // Search filtering
@@ -27,6 +33,21 @@ export function initSidebar(treeContainer, onNavigate) {
       searchFilter = e.target.value.toLowerCase();
       renderTree(treeContainer);
     });
+  }
+
+  // Create trash section
+  const sidebar = treeContainer.parentElement;
+  if (sidebar) {
+    trashContainer = document.createElement('div');
+    trashContainer.className = 'trash-section';
+    // Insert before sidebar-footer (if it exists)
+    const footer = sidebar.querySelector('.sidebar-footer');
+    if (footer) {
+      sidebar.insertBefore(trashContainer, footer);
+    } else {
+      sidebar.appendChild(trashContainer);
+    }
+    renderTrashHeader(trashContainer);
   }
 }
 
@@ -166,5 +187,114 @@ export function destroySidebar() {
   if (unsubscribe) {
     unsubscribe();
     unsubscribe = null;
+  }
+}
+
+// --- Trash Section ---
+
+function renderTrashHeader(container) {
+  container.innerHTML = '';
+  const header = document.createElement('div');
+  header.className = 'trash-header';
+  header.innerHTML = `
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/>
+      <path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/>
+    </svg>
+    <span>Papierkorb</span>
+    <svg class="trash-chevron${trashExpanded ? ' expanded' : ''}" width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M9 18l6-6-6-6"/>
+    </svg>
+  `;
+  header.addEventListener('click', () => {
+    trashExpanded = !trashExpanded;
+    renderTrashHeader(container);
+    if (trashExpanded) {
+      renderTrash(container);
+    }
+  });
+  container.appendChild(header);
+
+  if (trashExpanded) {
+    const list = document.createElement('div');
+    list.className = 'trash-list';
+    list.innerHTML = '<div class="trash-loading">Laden…</div>';
+    container.appendChild(list);
+  }
+}
+
+async function renderTrash(container) {
+  let list = container.querySelector('.trash-list');
+  if (!list) {
+    list = document.createElement('div');
+    list.className = 'trash-list';
+    container.appendChild(list);
+  }
+
+  try {
+    const deletedPages = await getDeletedPages();
+    list.innerHTML = '';
+
+    if (deletedPages.length === 0) {
+      list.innerHTML = '<div class="trash-empty">Papierkorb ist leer</div>';
+      return;
+    }
+
+    // Only show top-level deleted pages (whose parent is not also deleted)
+    const deletedIds = new Set(deletedPages.map(p => p.id));
+    const topLevel = deletedPages.filter(p => !p.parentId || !deletedIds.has(p.parentId));
+
+    topLevel.forEach((page) => {
+      const item = document.createElement('div');
+      item.className = 'trash-item';
+
+      const name = document.createElement('span');
+      name.className = 'trash-item-name';
+      name.textContent = page.title || 'Ohne Titel';
+      item.appendChild(name);
+
+      if (canEdit()) {
+        const actions = document.createElement('div');
+        actions.className = 'trash-item-actions';
+
+        const restoreBtn = document.createElement('button');
+        restoreBtn.className = 'btn-icon btn-small';
+        restoreBtn.title = 'Wiederherstellen';
+        restoreBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 105.64-11.36L1 10"/></svg>`;
+        restoreBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          try {
+            await restorePage(page.id);
+            renderTrash(container);
+          } catch (err) {
+            console.error('Restore error:', err);
+          }
+        });
+        actions.appendChild(restoreBtn);
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'btn-icon btn-small btn-danger';
+        deleteBtn.title = 'Endgültig löschen';
+        deleteBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+        deleteBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          if (!confirm('Endgültig löschen? Dies kann nicht rückgängig gemacht werden.')) return;
+          try {
+            await permanentlyDeletePage(page.id);
+            renderTrash(container);
+          } catch (err) {
+            console.error('Permanent delete error:', err);
+          }
+        });
+        actions.appendChild(deleteBtn);
+
+        item.appendChild(actions);
+      }
+
+      list.appendChild(item);
+    });
+  } catch (err) {
+    console.error('Error loading trash:', err);
+    list.innerHTML = '<div class="trash-empty">Fehler beim Laden</div>';
   }
 }
