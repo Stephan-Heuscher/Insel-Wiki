@@ -7,29 +7,29 @@
 :root {
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   
-  /* Core palette */
-  --bg-root: #0f1117;
-  --bg-surface: #161822;
-  --bg-elevated: #1e2030;
-  --bg-hover: #262840;
-  --bg-active: #2e3150;
+  /* Core palette (Burnham Dark Green) */
+  --bg-root: #04120e;
+  --bg-surface: #0a1f18;
+  --bg-elevated: #102d24;
+  --bg-hover: #183e33;
+  --bg-active: #1f4f42;
   
   /* Glass */
-  --glass-bg: rgba(30, 32, 48, 0.75);
-  --glass-border: rgba(255, 255, 255, 0.06);
-  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  --glass-bg: rgba(16, 45, 36, 0.75);
+  --glass-border: rgba(255, 255, 255, 0.05);
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
   
   /* Text */
-  --text-primary: #e8eaf0;
-  --text-secondary: #9ca0b4;
-  --text-muted: #5c6080;
-  --text-inverse: #0f1117;
+  --text-primary: #e6ecea;
+  --text-secondary: #9db2a9;
+  --text-muted: #647d75;
+  --text-inverse: #04120e;
   
   /* Accent — Inselspital Red */
-  --accent: #E2000F;
-  --accent-hover: #ff3341;
-  --accent-subtle: rgba(226, 0, 15, 0.12);
-  --accent-glow: rgba(226, 0, 15, 0.25);
+  --accent: #C8102E;
+  --accent-hover: #E2000F;
+  --accent-subtle: rgba(200, 16, 46, 0.15);
+  --accent-glow: rgba(200, 16, 46, 0.25);
   
   /* Status */
   --success: #34d399;
@@ -126,7 +126,7 @@ html, body {
   font-weight: 700;
   font-size: 1.05rem;
   letter-spacing: -0.01em;
-  background: linear-gradient(135deg, #e2000f, #ff6b6b);
+  background: linear-gradient(135deg, #e2000f, #C8102E);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -342,7 +342,7 @@ html, body {
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, #e2000f, #d6000e);
+  background: linear-gradient(135deg, #e2000f, #C8102E);
   color: white;
   box-shadow: 0 2px 12px var(--accent-glow);
 }
@@ -742,7 +742,7 @@ html, body {
 .auth-logo h1 {
   font-size: 1.6rem;
   font-weight: 700;
-  background: linear-gradient(135deg, #e2000f, #ff6b6b);
+  background: linear-gradient(135deg, #e2000f, #C8102E);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -1015,7 +1015,6 @@ html, body {
 .tree-item:nth-child(9) { animation-delay: 0.18s; }
 .tree-item:nth-child(10) { animation-delay: 0.20s; }
 
-/* --- Custom Modal --- */
 .modal-overlay {
   position: fixed;
   inset: 0;
@@ -1023,7 +1022,7 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(15, 17, 23, 0.8);
+  background: rgba(4, 18, 14, 0.8);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   animation: modalFadeIn var(--transition-fast) forwards;
