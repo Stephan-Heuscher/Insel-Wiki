@@ -9,6 +9,21 @@ let activePageId = null;
 let searchFilter = '';
 let trashExpanded = false;
 let trashContainer = null;
+let lastTreeFingerprint = null;
+const collapsedFolders = new Set();
+
+/**
+ * Get a fingerprint of the tree structure and titles
+ */
+function getTreeFingerprint(pages) {
+  const visibleProps = pages.map(p => ({
+    id: p.id,
+    title: p.title,
+    parentId: p.parentId,
+    order: p.order
+  })).sort((a, b) => a.id.localeCompare(b.id));
+  return JSON.stringify(visibleProps);
+}
 
 /**
  * Initialize sidebar and start listening to page changes
@@ -19,7 +34,14 @@ export function initSidebar(treeContainer, onNavigate) {
   // Listen to real-time page updates
   unsubscribe = subscribeToPages((pages) => {
     allPages = pages;
-    renderTree(treeContainer);
+    
+    // Only re-render tree if structure or titles changed (ignore updatedAt/content changes)
+    const fingerprint = getTreeFingerprint(pages);
+    if (fingerprint !== lastTreeFingerprint) {
+      lastTreeFingerprint = fingerprint;
+      renderTree(treeContainer);
+    }
+
     // Refresh trash if it's open
     if (trashExpanded && trashContainer) {
       renderTrash(trashContainer);
@@ -129,15 +151,24 @@ function createTreeItem(page, allFilteredPages) {
 
   // Expand button
   if (hasChildren) {
+    const isCollapsed = collapsedFolders.has(page.id);
     const expandBtn = document.createElement('button');
-    expandBtn.className = 'expand-btn expanded';
+    expandBtn.className = `expand-btn ${isCollapsed ? '' : 'expanded'}`;
     expandBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M9 18l6-6-6-6"/></svg>`;
     expandBtn.addEventListener('click', (e) => {
       e.stopPropagation();
+      const willBeCollapsed = expandBtn.classList.contains('expanded');
       expandBtn.classList.toggle('expanded');
+      
       const childContainer = item.querySelector('.tree-children');
       if (childContainer) {
         childContainer.classList.toggle('collapsed');
+      }
+
+      if (willBeCollapsed) {
+        collapsedFolders.add(page.id);
+      } else {
+        collapsedFolders.delete(page.id);
       }
     });
     row.appendChild(expandBtn);
@@ -170,7 +201,7 @@ function createTreeItem(page, allFilteredPages) {
   // Render children
   if (hasChildren) {
     const childContainer = document.createElement('div');
-    childContainer.className = 'tree-children';
+    childContainer.className = `tree-children ${collapsedFolders.has(page.id) ? 'collapsed' : ''}`;
     children.forEach((child) => {
       childContainer.appendChild(createTreeItem(child, allFilteredPages));
     });

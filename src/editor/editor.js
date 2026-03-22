@@ -17,6 +17,7 @@ import * as Y from 'yjs';
 // For Markdown conversion
 import TurndownService from 'turndown';
 import { marked } from 'marked';
+import { promptModal } from '../components/modal.js';
 
 let editor = null;
 let ydoc = null;
@@ -197,7 +198,7 @@ export function createFormatToolbar(container) {
   container.insertBefore(toolbar, container.firstChild);
 
   // Bind click events
-  toolbar.addEventListener('click', (e) => {
+  toolbar.addEventListener('click', async (e) => {
     const btn = e.target.closest('.format-btn');
     if (!btn || !editor) return;
 
@@ -219,12 +220,12 @@ export function createFormatToolbar(container) {
       case 'codeBlock': chain.toggleCodeBlock().run(); break;
       case 'horizontalRule': chain.setHorizontalRule().run(); break;
       case 'link': {
-        const url = prompt('URL eingeben:');
+        const url = await promptModal('URL eingeben:', 'https://...');
         if (url) chain.setLink({ href: url }).run();
         break;
       }
       case 'image': {
-        const src = prompt('Bild-URL eingeben:');
+        const src = await promptModal('Bild-URL eingeben:', 'https://...');
         if (src) chain.setImage({ src }).run();
         break;
       }

@@ -4,6 +4,7 @@ import { createPage, getPage, savePage, createHistorySnapshot, compactHistory, u
 import { createEditor, setContent, getMarkdown, setEditable, destroyEditor, createFormatToolbar } from './editor/editor.js';
 import { initSidebar, setActivePage, getBreadcrumb } from './components/sidebar.js';
 import { loadHistory, toggleHistoryPanel, closeHistoryPanel } from './components/history.js';
+import { promptModal } from './components/modal.js';
 
 // --- State ---
 let currentPageId = null;
@@ -307,7 +308,7 @@ function updateBreadcrumb(pageId) {
 // --- Page Actions ---
 async function handleNewPage(parentId) {
   if (!canEdit()) return;
-  const title = prompt('Seitentitel:', 'Neue Seite');
+  const title = await promptModal('Seitentitel eingeben:', 'z.B. Neue Seite', 'Neue Seite');
   if (!title) return;
 
   try {
