@@ -13,8 +13,14 @@ import {
   orderBy,
   onSnapshot,
   serverTimestamp,
-  Timestamp
+  Timestamp,
+  limit
 } from 'firebase/firestore';
+
+// --- History compaction settings ---
+const HISTORY_KEEP_RECENT = 20;        // keep last N entries as-is
+const HISTORY_MAX_AGE_DAYS = 30;       // delete entries older than this
+const HISTORY_COMPACT_INTERVAL_MS = 5 * 60 * 1000; // snapshot every 5 min
 
 const PAGES_COLLECTION = 'pages';
 
@@ -66,26 +72,81 @@ export async function getChildren(parentId = null) {
 }
 
 /**
- * Save page content (Markdown) and push a history snapshot
+ * Save page content only (no history snapshot).
+ * Called by the editor's debounced auto-save.
  */
 export async function savePage(pageId, content, title, savedBy = '') {
   const pageRef = doc(db, PAGES_COLLECTION, pageId);
-
-  // Update the page
   const updates = { updatedAt: serverTimestamp() };
   if (content !== undefined) updates.content = content;
   if (title !== undefined) updates.title = title;
   await updateDoc(pageRef, updates);
+}
 
-  // Push history snapshot
-  if (content !== undefined) {
-    const historyRef = collection(db, PAGES_COLLECTION, pageId, 'history');
-    await addDoc(historyRef, {
-      content,
-      title: title || '',
-      savedBy,
-      savedAt: serverTimestamp(),
-    });
+/**
+ * Create a history snapshot explicitly.
+ * Called on page leave, periodic interval, or manual trigger.
+ */
+export async function createHistorySnapshot(pageId, content, title, savedBy = '') {
+  const historyRef = collection(db, PAGES_COLLECTION, pageId, 'history');
+  await addDoc(historyRef, {
+    content,
+    title: title || '',
+    savedBy,
+    savedAt: serverTimestamp(),
+  });
+}
+
+/**
+ * Compact history: keep last HISTORY_KEEP_RECENT entries,
+ * for older entries keep only 1 per day, delete entries older than
+ * HISTORY_MAX_AGE_DAYS.
+ * Runs automatically when history is loaded.
+ */
+export async function compactHistory(pageId) {
+  const historyRef = collection(db, PAGES_COLLECTION, pageId, 'history');
+  const q = query(historyRef, orderBy('savedAt', 'desc'));
+  const snapshot = await getDocs(q);
+  const entries = snapshot.docs;
+
+  if (entries.length <= HISTORY_KEEP_RECENT) return; // nothing to compact
+
+  const now = Date.now();
+  const maxAgeMs = HISTORY_MAX_AGE_DAYS * 24 * 60 * 60 * 1000;
+  const seenDays = new Set(); // track "YYYY-MM-DD" keys for daily dedup
+  const toDelete = [];
+
+  entries.forEach((entry, index) => {
+    // Always keep the most recent entries
+    if (index < HISTORY_KEEP_RECENT) return;
+
+    const data = entry.data();
+    const ts = data.savedAt;
+    const date = ts instanceof Timestamp ? ts.toDate() : new Date(ts);
+    const ageMs = now - date.getTime();
+
+    // Delete entries older than max age
+    if (ageMs > maxAgeMs) {
+      toDelete.push(entry.ref);
+      return;
+    }
+
+    // For remaining old entries, keep 1 per day
+    const dayKey = date.toISOString().slice(0, 10); // "YYYY-MM-DD"
+    if (seenDays.has(dayKey)) {
+      toDelete.push(entry.ref);
+    } else {
+      seenDays.add(dayKey);
+    }
+  });
+
+  // Batch delete (Firestore limit: 500 per batch, but unlikely to hit)
+  for (const ref of toDelete) {
+    await deleteDoc(ref);
+  }
+
+  if (toDelete.length > 0) {
+    console.log(`[Insel-Wiki] Compacted history for page ${pageId}: removed ${toDelete.length} old entries`);
   }
 }
 

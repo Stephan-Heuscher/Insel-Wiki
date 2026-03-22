@@ -1,6 +1,6 @@
 // Insel-Wiki — Main Application Bootstrap
 import { initAuth, onAuthChange, login, logout, isLoggedIn, canEdit, getCurrentUser, getAccessRequestLink } from './firebase/auth.js';
-import { createPage, getPage, savePage, updatePageTitle, deletePage, getChildren, subscribeToPage } from './firebase/firestore.js';
+import { createPage, getPage, savePage, createHistorySnapshot, compactHistory, updatePageTitle, deletePage, getChildren, subscribeToPage } from './firebase/firestore.js';
 import { createEditor, setContent, getMarkdown, setEditable, destroyEditor, createFormatToolbar } from './editor/editor.js';
 import { initSidebar, setActivePage, getBreadcrumb } from './components/sidebar.js';
 import { loadHistory, toggleHistoryPanel, closeHistoryPanel } from './components/history.js';
@@ -9,6 +9,8 @@ import { loadHistory, toggleHistoryPanel, closeHistoryPanel } from './components
 let currentPageId = null;
 let currentPageUnsub = null;
 let formatToolbar = null;
+let historySnapshotInterval = null;
+const SNAPSHOT_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
 // --- DOM Elements ---
 const authOverlay = document.getElementById('auth-overlay');
@@ -143,11 +145,15 @@ function navigateToPage(pageId) {
 
 // --- Page Loading ---
 async function loadPage(pageId) {
+  // Snapshot the old page before leaving
+  await snapshotCurrentPage();
+
   // Cleanup
   if (currentPageUnsub) {
     currentPageUnsub();
     currentPageUnsub = null;
   }
+  clearInterval(historySnapshotInterval);
   closeHistoryPanel();
 
   currentPageId = pageId;
@@ -190,6 +196,15 @@ async function loadPage(pageId) {
   // Set save status
   updateSaveStatus('saved');
 
+  // Start periodic history snapshots (every 5 min while editing)
+  historySnapshotInterval = setInterval(() => {
+    snapshotCurrentPage();
+  }, SNAPSHOT_INTERVAL_MS);
+
+  // Snapshot on tab close / browser unload
+  window.removeEventListener('beforeunload', snapshotCurrentPage);
+  window.addEventListener('beforeunload', snapshotCurrentPage);
+
   // Subscribe to real-time updates for this page
   currentPageUnsub = subscribeToPage(pageId, (updatedPage) => {
     if (updatedPage && updatedPage.id === currentPageId) {
@@ -203,11 +218,35 @@ async function loadPage(pageId) {
 }
 
 function showEmptyState() {
+  snapshotCurrentPage();
+  clearInterval(historySnapshotInterval);
   currentPageId = null;
   destroyEditor();
   editorContainer.classList.add('hidden');
   emptyState.classList.remove('hidden');
   breadcrumbEl.innerHTML = '';
+}
+
+/**
+ * Create a history snapshot of the current page (if any content exists).
+ * Called on page leave, periodically, and on browser unload.
+ */
+async function snapshotCurrentPage() {
+  if (!currentPageId || !canEdit()) return;
+  try {
+    const markdown = getMarkdown();
+    if (!markdown || markdown.trim().length === 0) return;
+    const user = getCurrentUser();
+    await createHistorySnapshot(
+      currentPageId,
+      markdown,
+      pageTitleInput.value,
+      user?.email || ''
+    );
+  } catch (err) {
+    // Silent — don't block navigation for snapshot errors
+    console.warn('[Insel-Wiki] Snapshot error:', err);
+  }
 }
 
 // --- Save ---
@@ -295,10 +334,12 @@ async function handleDeletePage() {
   }
 }
 
-function handleHistoryToggle() {
+async function handleHistoryToggle() {
   if (currentPageId) {
     toggleHistoryPanel();
     loadHistory(currentPageId);
+    // Compact history in the background when viewing it
+    compactHistory(currentPageId).catch(console.warn);
   }
 }
 
