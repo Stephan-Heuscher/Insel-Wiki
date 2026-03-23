@@ -49,6 +49,13 @@ export function createEditor(element, pageId, user, onSave) {
 
   // Create Custom Firestore Provider for robust serverless sync
   provider = new FirestoreYjsProvider(pageId, ydoc, user);
+  provider.setLoadCallback((hasYjsState) => {
+    // If it's a completely blank/legacy page without Yjs state, 
+    // inject the markdown backup as a starting point.
+    if (!hasYjsState && window.pendingMarkdownInjection !== undefined) {
+      setContent(window.pendingMarkdownInjection);
+    }
+  });
 
   const extensions = [
     StarterKit.configure({
@@ -162,20 +169,20 @@ export function createEditor(element, pageId, user, onSave) {
     },
   });
 
+  // Start initialization of async Provider load
+  provider.init();
+
   return editor;
 }
 
 /**
- * Set editor content from Markdown. Only runs on initial empty load.
+ * Set editor content from Markdown. 
+ * Only runs on initial empty load if no Yjs state exists.
  */
 export function setContent(markdown) {
   if (!editor) return;
-  
-  // Only inject content if there are no existing peers mapped and the doc is empty.
-  if (provider && provider.awareness.getStates().size <= 1) {
-    const html = marked.parse(markdown || '');
-    editor.commands.setContent(html, false);
-  }
+  const html = marked.parse(markdown || '');
+  editor.commands.setContent(html, false);
 }
 
 /**

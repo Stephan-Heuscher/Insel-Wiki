@@ -306,8 +306,10 @@ async function loadPage(pageId) {
     }
   }
 
-  // Set content
-  setContent(page.content || '');
+  // Defer content injection to the Yjs Provider load callback
+  // It will only be injected if there is no pre-existing compressed Yjs state.
+  window.pendingMarkdownInjection = page.content || '';
+  
   setEditable(canEdit());
   pageTitleInput.readOnly = !canEdit();
 

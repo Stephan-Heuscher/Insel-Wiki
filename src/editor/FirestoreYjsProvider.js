@@ -11,7 +11,9 @@ import {
   Bytes,
   doc,
   setDoc,
-  deleteDoc
+  deleteDoc,
+  getDocs,
+  limit
 } from 'firebase/firestore';
 
 export class FirestoreYjsProvider {
@@ -31,11 +33,17 @@ export class FirestoreYjsProvider {
 
     this.updatesRef = collection(db, 'pages', pageId, 'yjs_updates');
     this.awarenessRef = collection(db, 'pages', pageId, 'yjs_awareness');
+    this.stateDocRef = doc(db, 'pages', pageId, 'yjs_state', 'state'); // Binary state single source
 
     this.unsubUpdates = null;
     this.unsubAwareness = null;
+    this.awarenessTimeout = null;
+    this.onLoadComplete = null;
+    this.hasYjsState = false;
+  }
 
-    this.init();
+  setLoadCallback(callback) {
+    this.onLoadComplete = callback;
   }
 
   getRandomColor() {
@@ -43,44 +51,72 @@ export class FirestoreYjsProvider {
     return colors[Math.floor(Math.random() * colors.length)];
   }
 
-  init() {
-    // 1. Sync Document Updates
+  async init() {
+    // 1. Fetch Compressed State (if any)
+    const stateDoc = await getDocs(query(collection(db, 'pages', this.pageId, 'yjs_state'), limit(1)));
+    if (!stateDoc.empty && stateDoc.docs[0].data().state) {
+      this.hasYjsState = true;
+      const stateArr = stateDoc.docs[0].data().state.toUint8Array();
+      Y.applyUpdate(this.ydoc, stateArr, this);
+    }
+
+    // 2. Fetch pending updates and compact them if we are the first to load
+    const pendingUpdates = await getDocs(query(this.updatesRef, orderBy('timestamp', 'asc')));
+    if (!pendingUpdates.empty) {
+      pendingUpdates.forEach(change => {
+        if (change.data().update) {
+          const updateArr = change.data().update.toUint8Array();
+          Y.applyUpdate(this.ydoc, updateArr, this);
+        }
+      });
+      // Compact: Save new state and delete old updates
+      const newState = Y.encodeStateAsUpdate(this.ydoc);
+      await setDoc(this.stateDocRef, { state: Bytes.fromUint8Array(newState), updatedAt: serverTimestamp() });
+      pendingUpdates.forEach(change => deleteDoc(change.ref).catch(() => {}));
+    }
+
+    // Inform editor that binary state load is complete
+    if (this.onLoadComplete) {
+      this.onLoadComplete(this.hasYjsState || !pendingUpdates.empty);
+    }
+
+    // 3. Sync New Document Updates (Live)
     this.ydoc.on('update', (update, origin) => {
-      // Don't echo updates we just applied from Firestore
       if (origin !== this) {
         addDoc(this.updatesRef, {
           update: Bytes.fromUint8Array(update),
           timestamp: serverTimestamp(),
           clientId: this.clientId
-        }).catch(err => console.error('[FirestoreYjs] update error:', err));
+        }).catch(() => {});
       }
     });
 
-    const qUpdates = query(this.updatesRef, orderBy('timestamp', 'asc'));
+    const loadTime = new Date(); // Only listen for new updates to prevent re-applying old ones
+    const qUpdates = query(this.updatesRef, where('timestamp', '>=', loadTime), orderBy('timestamp', 'asc'));
     this.unsubUpdates = onSnapshot(qUpdates, (snapshot) => {
       snapshot.docChanges().forEach(change => {
         if (change.type === 'added') {
           const data = change.doc.data();
-          // Apply updates from other clients
           if (data.clientId !== this.clientId && data.update) {
             const updateArr = data.update.toUint8Array();
             Y.applyUpdate(this.ydoc, updateArr, this);
           }
         }
       });
-    }, err => {
-      console.error('[FirestoreYjs] snapshot error:', err);
     });
 
-    // 2. Sync Awareness (Cursors & Selections)
+    // 4. Sync Awareness (Cursors & Selections)
     this.awareness.on('update', ({ added, updated, removed }, origin) => {
       if (origin === 'local') {
-        const state = awarenessProtocol.encodeAwarenessUpdate(this.awareness, [this.clientId]);
-        const docRef = doc(this.awarenessRef, this.clientId.toString());
-        setDoc(docRef, {
-          state: Bytes.fromUint8Array(state),
-          updatedAt: serverTimestamp()
-        }).catch(() => {});
+        clearTimeout(this.awarenessTimeout);
+        this.awarenessTimeout = setTimeout(() => {
+          const state = awarenessProtocol.encodeAwarenessUpdate(this.awareness, [this.clientId]);
+          const docRef = doc(this.awarenessRef, this.clientId.toString());
+          setDoc(docRef, {
+            state: Bytes.fromUint8Array(state),
+            updatedAt: serverTimestamp()
+          }).catch(() => {});
+        }, 300); // Debounce to prevent sluggishness
       }
     });
 
