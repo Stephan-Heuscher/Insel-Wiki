@@ -36,7 +36,7 @@ const turndown = new TurndownService({
 /**
  * Initialize the editor for a given page
  */
-export function createEditor(element, pageId, userName, onSave) {
+export function createEditor(element, pageId, user, onSave) {
   // Clean up previous editor
   destroyEditor();
 
@@ -47,7 +47,7 @@ export function createEditor(element, pageId, userName, onSave) {
   ydoc = new Y.Doc();
 
   // Create Custom Firestore Provider for robust serverless sync
-  provider = new FirestoreYjsProvider(pageId, ydoc, userName);
+  provider = new FirestoreYjsProvider(pageId, ydoc, user);
 
   const extensions = [
     StarterKit.configure({

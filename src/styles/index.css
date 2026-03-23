@@ -239,13 +239,36 @@ html, body {
 }
 
 .user-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 0.8rem;
   color: var(--text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   flex: 1;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: var(--radius-sm);
+  transition: background var(--transition-fast), color var(--transition-fast);
 }
+
+.user-info:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.user-avatar-img {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+  display: inline-block;
+  background-color: var(--bg-hover);
+}
+
 
 /* --- Main Content --- */
 .main-content {
@@ -327,6 +350,13 @@ html, body {
   cursor: default;
   position: relative;
   z-index: 1;
+}
+
+.collab-avatar img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
 }
 
 .collab-avatar:hover {

@@ -1,5 +1,5 @@
 // Insel-Wiki — Main Application Bootstrap
-import { initAuth, onAuthChange, login, logout, isLoggedIn, canEdit, getCurrentUser, getAccessRequestLink } from './firebase/auth.js';
+import { initAuth, onAuthChange, login, logout, isLoggedIn, canEdit, getCurrentUser, getAccessRequestLink, updateUserProfile } from './firebase/auth.js';
 import { createPage, getPage, savePage, createHistorySnapshot, compactHistory, updatePageTitle, deletePage, restorePage, getDeletedPages, permanentlyDeletePage, getChildren, subscribeToPage } from './firebase/firestore.js';
 import { createEditor, setContent, getMarkdown, setEditable, destroyEditor, createFormatToolbar, getProvider } from './editor/editor.js';
 import { joinPage, leavePage, subscribeToPresence } from './firebase/presence.js';
@@ -37,6 +37,13 @@ const userInfoEl = document.getElementById('user-info');
 const sidebarToggle = document.getElementById('sidebar-toggle');
 const sidebar = document.getElementById('sidebar');
 
+// --- Profile Modal Elements ---
+const profileModal = document.getElementById('profile-modal');
+const profileNameInput = document.getElementById('profile-name');
+const profileAvatarInput = document.getElementById('profile-avatar');
+const profileSaveBtn = document.getElementById('profile-save-btn');
+const profileCancelBtn = document.getElementById('profile-cancel-btn');
+
 // --- Initialize ---
 async function init() {
   // Setup mailto link
@@ -64,6 +71,11 @@ async function init() {
   document.getElementById('history-btn').addEventListener('click', handleHistoryToggle);
   document.getElementById('close-history').addEventListener('click', closeHistoryPanel);
   document.getElementById('empty-new-page').addEventListener('click', () => handleNewPage(null));
+
+  // Setup profile modal
+  if (userInfoEl) userInfoEl.addEventListener('click', openProfileModal);
+  if (profileCancelBtn) profileCancelBtn.addEventListener('click', closeProfileModal);
+  if (profileSaveBtn) profileSaveBtn.addEventListener('click', handleProfileSave);
 
   // Title input — save on change
   pageTitleInput.addEventListener('input', debounce(() => {
@@ -94,7 +106,15 @@ function handleAuthChange(user) {
     // Logged in
     authOverlay.classList.add('hidden');
     if (userInfoEl) {
-      userInfoEl.textContent = user.email || 'Angemeldet';
+      const name = user.displayName || user.email.split('@')[0];
+      let innerHTML = '';
+      if (user.photoURL) {
+        innerHTML = `<img src="${user.photoURL}" class="user-avatar-img" alt="Avatar">`;
+      } else {
+        innerHTML = `<div class="user-avatar-img" style="display:flex;align-items:center;justify-content:center;font-weight:600;color:#fff;background:var(--accent);font-size:0.75rem">${name.charAt(0).toUpperCase()}</div>`;
+      }
+      innerHTML += `<span>${name}</span>`;
+      userInfoEl.innerHTML = innerHTML;
     }
     // Enable/disable editing
     setEditable(canEdit());
@@ -106,7 +126,7 @@ function handleAuthChange(user) {
   } else {
     // Not logged in — show auth overlay
     authOverlay.classList.remove('hidden');
-    if (userInfoEl) userInfoEl.textContent = '';
+    if (userInfoEl) userInfoEl.innerHTML = '';
   }
 }
 
@@ -130,6 +150,42 @@ async function handleLogin(e) {
 async function handleLogout() {
   await logout();
   window.location.hash = '';
+}
+
+// --- Profile Modal logic ---
+function openProfileModal() {
+  const user = getCurrentUser();
+  if (!user) return;
+  profileNameInput.value = user.displayName || '';
+  profileAvatarInput.value = user.photoURL || '';
+  profileModal.classList.remove('hidden');
+}
+
+function closeProfileModal() {
+  profileModal.classList.add('hidden');
+}
+
+async function handleProfileSave() {
+  const newName = profileNameInput.value.trim() || null;
+  const newAvatar = profileAvatarInput.value.trim() || null;
+  profileSaveBtn.disabled = true;
+  profileSaveBtn.textContent = 'Speichern...';
+  try {
+    const updatedUser = await updateUserProfile(newName, newAvatar);
+    closeProfileModal();
+    // Provide a hint to reload or gracefully update presence in current session
+    // Right now, rejoining page re-transmits the new data cleanly
+    if (currentPageId) {
+      leavePage();
+      currentSessionId = await joinPage(currentPageId, updatedUser);
+    }
+  } catch (err) {
+    console.error('Fehler beim Profil-Update:', err);
+    alert('Profil konnte nicht aktualisiert werden.');
+  } finally {
+    profileSaveBtn.disabled = false;
+    profileSaveBtn.textContent = 'Speichern';
+  }
 }
 
 // --- Routing ---
@@ -186,8 +242,17 @@ async function loadPage(pageId) {
   pageTitleInput.value = page.title || '';
 
   // Create editor
-  const userName = getCurrentUser()?.email || 'Gast';
-  const ed = createEditor(editorEl, pageId, userName, handleSave);
+  const user = getCurrentUser();
+  const userName = user?.displayName || user?.email?.split('@')[0] || 'Gast';
+  
+  // Passed full user info to createEditor
+  const fullUser = {
+    name: userName,
+    email: user?.email || '',
+    photoURL: user?.photoURL || null
+  };
+  
+  const ed = createEditor(editorEl, pageId, fullUser, handleSave);
 
   // Create format toolbar (once)
   if (!formatToolbar) {
@@ -233,9 +298,8 @@ async function loadPage(pageId) {
   });
 
   // Setup presence
-  const user = getCurrentUser();
   if (user) {
-    currentSessionId = await joinPage(pageId, user);
+    currentSessionId = await joinPage(pageId, fullUser);
   }
   
   currentPresenceUnsub = subscribeToPresence(pageId, (users) => {
@@ -251,8 +315,17 @@ function renderPresence(users) {
     const avatar = document.createElement('div');
     avatar.className = 'collab-avatar';
     avatar.style.backgroundColor = u.color;
-    avatar.title = u.email;
-    avatar.textContent = u.initials;
+    avatar.title = u.name || u.email;
+    
+    if (u.photoURL) {
+      const img = document.createElement('img');
+      img.src = u.photoURL;
+      img.alt = u.name || u.initials;
+      avatar.appendChild(img);
+    } else {
+      avatar.textContent = u.initials;
+    }
+    
     collabCursorsEl.appendChild(avatar);
   });
 }
@@ -301,8 +374,8 @@ async function handleSave(pageId, markdown) {
   if (!canEdit()) return;
   updateSaveStatus('saving');
   try {
-    const user = getCurrentUser();
-    await savePage(pageId, markdown, pageTitleInput.value, user?.email || '');
+    const currentUser = getCurrentUser();
+    await savePage(pageId, markdown, pageTitleInput.value, currentUser?.email || '');
     updateSaveStatus('saved');
   } catch (err) {
     console.error('Save error:', err);
@@ -358,8 +431,8 @@ async function handleNewPage(parentId) {
   if (!title) return;
 
   try {
-    const user = getCurrentUser();
-    const pageId = await createPage(title, parentId, user?.email || '');
+    const currentUser = getCurrentUser();
+    const pageId = await createPage(title, parentId, currentUser?.email || '');
     navigateToPage(pageId);
   } catch (err) {
     console.error('Error creating page:', err);

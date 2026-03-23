@@ -15,7 +15,7 @@ import {
 } from 'firebase/firestore';
 
 export class FirestoreYjsProvider {
-  constructor(pageId, ydoc, userName) {
+  constructor(pageId, ydoc, user) {
     this.ydoc = ydoc;
     this.doc = ydoc; // Explicitly expose `doc` for Tiptap CollaborationCursor extension
     this.pageId = pageId;
@@ -24,8 +24,9 @@ export class FirestoreYjsProvider {
     
     // Initialize awareness state for ourselves
     this.awareness.setLocalStateField('user', {
-      name: userName || 'Gast',
-      color: this.getRandomColor()
+      name: user?.name || 'Gast',
+      color: user?.color || this.getRandomColor(),
+      photoURL: user?.photoURL || null
     });
 
     this.updatesRef = collection(db, 'pages', pageId, 'yjs_updates');

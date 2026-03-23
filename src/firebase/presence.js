@@ -34,6 +34,9 @@ export async function joinPage(pageId, user) {
   
   await setDoc(presenceRef, {
     email: user.email || 'Gast',
+    name: user.name || user.email?.split('@')[0] || 'Gast',
+    photoURL: user.photoURL || null,
+    color: user.color || getColorForEmail(user.email || 'Gast'),
     joinedAt: serverTimestamp(),
     lastSeen: serverTimestamp()
   });
@@ -102,8 +105,10 @@ export function subscribeToPresence(pageId, callback) {
         users.push({
           id: docSnap.id,
           email: data.email,
-          color: getColorForEmail(data.email),
-          initials: getInitials(data.email)
+          name: data.name,
+          photoURL: data.photoURL,
+          color: data.color || getColorForEmail(data.email),
+          initials: getInitials(data.name || data.email)
         });
       }
     });
