@@ -13,6 +13,7 @@ import { TableRow } from '@tiptap/extension-table-row';
 import { TableCell } from '@tiptap/extension-table-cell';
 import { TableHeader } from '@tiptap/extension-table-header';
 import { CodeBlock } from '@tiptap/extension-code-block';
+import { CharacterCount } from '@tiptap/extension-character-count';
 import * as Y from 'yjs';
 import { FirestoreYjsProvider } from './FirestoreYjsProvider.js';
 
@@ -84,6 +85,9 @@ export function createEditor(element, pageId, user, onSave) {
     TableRow,
     TableCell,
     TableHeader,
+    CharacterCount.configure({
+      limit: 100000,
+    }),
     Collaboration.configure({
       document: ydoc,
     }),
@@ -162,7 +166,11 @@ export function createEditor(element, pageId, user, onSave) {
       saveTimeout = setTimeout(() => {
         if (saveCallback && currentPageId) {
           const html = ed.getHTML();
-          const markdown = turndown.turndown(html);
+          let markdown = turndown.turndown(html);
+          if (markdown.length > 100000) {
+            markdown = markdown.substring(0, 100000);
+            console.warn('[Insel-Wiki] Saved content exceeded 100,000 characters and was truncated.');
+          }
           saveCallback(currentPageId, markdown);
         }
       }, 1500);
