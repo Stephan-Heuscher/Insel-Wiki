@@ -285,3 +285,39 @@ export function formatTimestamp(ts) {
     minute: '2-digit',
   });
 }
+
+/**
+ * Update the hierarchy and order of pages.
+ * Called when a page is dragged and dropped.
+ */
+export async function updatePageHierarchy(draggedId, newParentId, newOrder) {
+  const batch = writeBatch(db);
+  const pagesRef = collection(db, PAGES_COLLECTION);
+  
+  // 1. Get all siblings in the new parent's context
+  const targetSiblings = await getChildren(newParentId);
+  const siblingsList = targetSiblings
+    .filter(p => p.id !== draggedId && !p.deleted) // remove dragged item from current position
+    .sort((a, b) => a.order - b.order);
+    
+  // 2. Insert dragged item at the requested target index
+  // Note: we just need to place an object representing the dragged item at the specified index
+  const draggedPlaceholder = { id: draggedId };
+  siblingsList.splice(newOrder, 0, draggedPlaceholder);
+  
+  // 3. Batch update the new order for all siblings in the destination list
+  siblingsList.forEach((sibling, index) => {
+    const ref = doc(db, PAGES_COLLECTION, sibling.id);
+    const updates = { order: index };
+    
+    // For the dragged item itself, also update parentId
+    if (sibling.id === draggedId) {
+      updates.parentId = newParentId;
+      updates.updatedAt = serverTimestamp();
+    }
+    
+    batch.update(ref, updates);
+  });
+  
+  await batch.commit();
+}

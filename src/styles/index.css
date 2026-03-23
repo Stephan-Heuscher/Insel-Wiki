@@ -190,6 +190,25 @@ html, body {
   font-weight: 500;
 }
 
+/* Drag & Drop Feedback */
+.tree-item.is-dragging {
+  opacity: 0.5;
+  background: var(--bg-hover);
+}
+
+.tree-item.drop-above {
+  box-shadow: inset 0 2px 0 0 var(--accent);
+}
+
+.tree-item.drop-below {
+  box-shadow: inset 0 -2px 0 0 var(--accent);
+}
+
+.tree-item.drop-inside {
+  background: var(--accent-subtle);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
 .tree-item .expand-btn {
   display: inline-flex;
   align-items: center;

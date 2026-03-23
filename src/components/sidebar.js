@@ -1,5 +1,5 @@
 // Sidebar component — hierarchical page tree with real-time updates
-import { subscribeToPages, createPage, getDeletedPages, restorePage, permanentlyDeletePage } from '../firebase/firestore.js';
+import { subscribeToPages, createPage, getDeletedPages, restorePage, permanentlyDeletePage, updatePageHierarchy } from '../firebase/firestore.js';
 import { canEdit } from '../firebase/auth.js';
 
 let allPages = [];
@@ -10,6 +10,7 @@ let searchFilter = '';
 let trashExpanded = false;
 let trashContainer = null;
 let lastTreeFingerprint = null;
+let draggedPageId = null;
 const collapsedFolders = new Set();
 
 /**
@@ -195,6 +196,98 @@ function createTreeItem(page, allFilteredPages) {
   row.addEventListener('click', () => {
     if (onNavigateCallback) onNavigateCallback(page.id);
   });
+
+  // --- Drag & Drop ---
+  if (canEdit() && !searchFilter) {
+    row.draggable = true;
+
+    row.addEventListener('dragstart', (e) => {
+      draggedPageId = page.id;
+      e.dataTransfer.effectAllowed = 'move';
+      // Slight delay to allow UI to clone the element before hiding it
+      setTimeout(() => row.classList.add('is-dragging'), 0);
+    });
+
+    row.addEventListener('dragend', () => {
+      draggedPageId = null;
+      row.classList.remove('is-dragging');
+      document.querySelectorAll('.tree-item').forEach(el => {
+        el.classList.remove('drop-above', 'drop-below', 'drop-inside');
+      });
+    });
+
+    row.addEventListener('dragover', (e) => {
+      e.preventDefault(); // Necessary to allow dropping
+      if (!draggedPageId || draggedPageId === page.id) return;
+
+      // Prevent dropping a parent into its own child hierarchy
+      let currentParent = page.parentId;
+      while (currentParent) {
+        if (currentParent === draggedPageId) return; // invalid drop target
+        const parentPage = allFilteredPages.find(p => p.id === currentParent);
+        currentParent = parentPage ? parentPage.parentId : null;
+      }
+
+      e.dataTransfer.dropEffect = 'move';
+      
+      const rect = row.getBoundingClientRect();
+      const relativeY = e.clientY - rect.top;
+      
+      row.classList.remove('drop-above', 'drop-below', 'drop-inside');
+      
+      if (relativeY < rect.height * 0.25) {
+        row.dataset.dropAction = 'above';
+        row.classList.add('drop-above');
+      } else if (relativeY > rect.height * 0.75) {
+        row.dataset.dropAction = 'below';
+        row.classList.add('drop-below');
+      } else {
+        row.dataset.dropAction = 'inside';
+        row.classList.add('drop-inside');
+      }
+    });
+
+    row.addEventListener('dragleave', () => {
+      row.classList.remove('drop-above', 'drop-below', 'drop-inside');
+      row.dataset.dropAction = '';
+    });
+
+    row.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      row.classList.remove('drop-above', 'drop-below', 'drop-inside');
+      
+      const dropAction = row.dataset.dropAction;
+      if (!draggedPageId || draggedPageId === page.id || !dropAction) return;
+
+      let newParentId = null;
+      let newOrder = 0;
+
+      if (dropAction === 'inside') {
+        newParentId = page.id;
+        // Place at the end of the new parent's children
+        const targetChildren = allFilteredPages.filter(p => p.parentId === page.id);
+        newOrder = targetChildren.length;
+        
+        // Auto-expand folder on drop
+        collapsedFolders.delete(page.id);
+      } else {
+        newParentId = page.parentId;
+        // Determine the order amongst siblings
+        const siblings = allFilteredPages
+          .filter(p => p.parentId === page.parentId)
+          .sort((a, b) => a.order - b.order);
+        
+        const targetIndex = siblings.findIndex(p => p.id === page.id);
+        newOrder = dropAction === 'above' ? targetIndex : targetIndex + 1;
+      }
+
+      try {
+        await updatePageHierarchy(draggedPageId, newParentId, newOrder);
+      } catch (err) {
+        console.error('Drag and drop error:', err);
+      }
+    });
+  }
 
   item.appendChild(row);
 
