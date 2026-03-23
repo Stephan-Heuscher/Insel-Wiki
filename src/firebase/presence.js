@@ -1,4 +1,5 @@
 import { db } from './config.js';
+import { formatDefaultName } from '../utils/string.js';
 import {
   collection,
   doc,
@@ -34,7 +35,7 @@ export async function joinPage(pageId, user) {
   
   await setDoc(presenceRef, {
     email: user.email || 'Gast',
-    name: user.name || user.email?.split('@')[0] || 'Gast',
+    name: user.name || user.displayName || formatDefaultName(user.email) || 'Gast',
     photoURL: user.photoURL || null,
     color: user.color || getColorForEmail(user.email || 'Gast'),
     joinedAt: serverTimestamp(),
@@ -156,7 +157,7 @@ function getInitials(email) {
   return email.substring(0, 2).toUpperCase();
 }
 
-function getColorForEmail(email) {
+export function getColorForEmail(email) {
   // Simple deterministic color generation based on email string
   let hash = 0;
   for (let i = 0; i < email.length; i++) {

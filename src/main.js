@@ -1,8 +1,10 @@
 // Insel-Wiki — Main Application Bootstrap
 import { initAuth, onAuthChange, login, logout, isLoggedIn, canEdit, getCurrentUser, getAccessRequestLink, updateUserProfile } from './firebase/auth.js';
+import { uploadAvatar } from './firebase/storage.js';
+import { formatDefaultName } from './utils/string.js';
 import { createPage, getPage, savePage, createHistorySnapshot, compactHistory, updatePageTitle, deletePage, restorePage, getDeletedPages, permanentlyDeletePage, getChildren, subscribeToPage } from './firebase/firestore.js';
 import { createEditor, setContent, getMarkdown, setEditable, destroyEditor, createFormatToolbar, getProvider } from './editor/editor.js';
-import { joinPage, leavePage, subscribeToPresence } from './firebase/presence.js';
+import { joinPage, leavePage, subscribeToPresence, getColorForEmail } from './firebase/presence.js';
 import { initSidebar, setActivePage, getBreadcrumb } from './components/sidebar.js';
 import { loadHistory, toggleHistoryPanel, closeHistoryPanel } from './components/history.js';
 import { promptModal } from './components/modal.js';
@@ -40,9 +42,13 @@ const sidebar = document.getElementById('sidebar');
 // --- Profile Modal Elements ---
 const profileModal = document.getElementById('profile-modal');
 const profileNameInput = document.getElementById('profile-name');
-const profileAvatarInput = document.getElementById('profile-avatar');
+const profileAvatarFile = document.getElementById('profile-avatar-file');
+const avatarPreviewContainer = document.getElementById('avatar-preview-container');
+const avatarPreviewImg = document.getElementById('avatar-preview-img');
 const profileSaveBtn = document.getElementById('profile-save-btn');
 const profileCancelBtn = document.getElementById('profile-cancel-btn');
+
+let selectedAvatarFile = null;
 
 // --- Initialize ---
 async function init() {
@@ -76,6 +82,20 @@ async function init() {
   if (userInfoEl) userInfoEl.addEventListener('click', openProfileModal);
   if (profileCancelBtn) profileCancelBtn.addEventListener('click', closeProfileModal);
   if (profileSaveBtn) profileSaveBtn.addEventListener('click', handleProfileSave);
+  
+  if (profileAvatarFile) {
+    profileAvatarFile.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (file) {
+        selectedAvatarFile = file;
+        avatarPreviewImg.src = URL.createObjectURL(file);
+        avatarPreviewContainer.style.display = 'flex';
+      } else {
+        selectedAvatarFile = null;
+        avatarPreviewContainer.style.display = 'none';
+      }
+    });
+  }
 
   // Title input — save on change
   pageTitleInput.addEventListener('input', debounce(() => {
@@ -106,7 +126,7 @@ function handleAuthChange(user) {
     // Logged in
     authOverlay.classList.add('hidden');
     if (userInfoEl) {
-      const name = user.displayName || user.email.split('@')[0];
+      const name = user.displayName || formatDefaultName(user.email);
       let innerHTML = '';
       if (user.photoURL) {
         innerHTML = `<img src="${user.photoURL}" class="user-avatar-img" alt="Avatar">`;
@@ -157,7 +177,14 @@ function openProfileModal() {
   const user = getCurrentUser();
   if (!user) return;
   profileNameInput.value = user.displayName || '';
-  profileAvatarInput.value = user.photoURL || '';
+  profileAvatarFile.value = '';
+  selectedAvatarFile = null;
+  if (user.photoURL) {
+    avatarPreviewImg.src = user.photoURL;
+    avatarPreviewContainer.style.display = 'flex';
+  } else {
+    avatarPreviewContainer.style.display = 'none';
+  }
   profileModal.classList.remove('hidden');
 }
 
@@ -167,11 +194,21 @@ function closeProfileModal() {
 
 async function handleProfileSave() {
   const newName = profileNameInput.value.trim() || null;
-  const newAvatar = profileAvatarInput.value.trim() || null;
   profileSaveBtn.disabled = true;
   profileSaveBtn.textContent = 'Speichern...';
+  
   try {
-    const updatedUser = await updateUserProfile(newName, newAvatar);
+    const user = getCurrentUser();
+    let newAvatarUrl = user.photoURL; // default to existing
+    
+    // Upload file if selected
+    if (selectedAvatarFile) {
+      profileSaveBtn.textContent = 'Bild hochladen...';
+      newAvatarUrl = await uploadAvatar(selectedAvatarFile, user.uid);
+    }
+    
+    profileSaveBtn.textContent = 'Profil wird aktualisiert...';
+    const updatedUser = await updateUserProfile(newName, newAvatarUrl);
     closeProfileModal();
     // Provide a hint to reload or gracefully update presence in current session
     // Right now, rejoining page re-transmits the new data cleanly
@@ -181,7 +218,7 @@ async function handleProfileSave() {
     }
   } catch (err) {
     console.error('Fehler beim Profil-Update:', err);
-    alert('Profil konnte nicht aktualisiert werden.');
+    alert('Profil konnte nicht aktualisiert werden. ' + (err.message || ''));
   } finally {
     profileSaveBtn.disabled = false;
     profileSaveBtn.textContent = 'Speichern';
@@ -243,13 +280,14 @@ async function loadPage(pageId) {
 
   // Create editor
   const user = getCurrentUser();
-  const userName = user?.displayName || user?.email?.split('@')[0] || 'Gast';
+  const userName = user?.displayName || formatDefaultName(user?.email);
   
   // Passed full user info to createEditor
   const fullUser = {
     name: userName,
     email: user?.email || '',
-    photoURL: user?.photoURL || null
+    photoURL: user?.photoURL || null,
+    color: getColorForEmail(user?.email || 'Gast')
   };
   
   const ed = createEditor(editorEl, pageId, fullUser, handleSave);

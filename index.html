@@ -127,9 +127,13 @@
             <input type="text" id="profile-name" class="modal-input" placeholder="Max Muster" />
           </div>
           <div class="form-group" style="margin-bottom: 32px;">
-            <label for="profile-avatar">Avatar (Bild-URL)</label>
-            <input type="url" id="profile-avatar" class="modal-input" placeholder="https://beispiel.de/bild.jpg" />
-            <p class="auth-hint" style="margin-top: 8px;">Lass dies leer, um ein Standard-Icon zu verwenden.</p>
+            <label for="profile-avatar-file">Avatar hochladen</label>
+            <input type="file" id="profile-avatar-file" class="modal-input" accept="image/jpeg, image/png, image/webp" style="padding: 8px;" />
+            <div id="avatar-preview-container" style="display: none; margin-top: 12px; align-items: center; gap: 12px;">
+              <img id="avatar-preview-img" src="" alt="Vorschau" style="width: 48px; height: 48px; border-radius: 50%; object-fit: cover; border: 2px solid var(--border);" />
+              <span style="font-size: 0.8rem; color: var(--text-secondary);">Neue Auswahl</span>
+            </div>
+            <p class="auth-hint" style="margin-top: 8px; text-align: left;">Maximal 2 MB Format: JPG, PNG, WEBP.</p>
           </div>
           <div class="modal-actions">
             <button type="button" class="btn btn-secondary" id="profile-cancel-btn">Abbrechen</button>
