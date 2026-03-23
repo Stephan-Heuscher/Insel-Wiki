@@ -9,6 +9,21 @@ service cloud.firestore {
         allow read: if true;
         allow write: if request.auth != null && request.auth.token.email.matches('.*@insel[.]ch$');
       }
+
+      match /presence/{sessionId} {
+        allow read: if true;
+        allow write: if request.auth != null && request.auth.token.email.matches('.*@insel[.]ch$');
+      }
+
+      match /yjs_updates/{updateId} {
+        allow read: if true;
+        allow write: if request.auth != null && request.auth.token.email.matches('.*@insel[.]ch$');
+      }
+
+      match /yjs_awareness/{clientId} {
+        allow read: if true;
+        allow write: if request.auth != null && request.auth.token.email.matches('.*@insel[.]ch$');
+      }
     }
   }
 }

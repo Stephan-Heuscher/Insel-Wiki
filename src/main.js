@@ -1,7 +1,8 @@
 // Insel-Wiki — Main Application Bootstrap
 import { initAuth, onAuthChange, login, logout, isLoggedIn, canEdit, getCurrentUser, getAccessRequestLink } from './firebase/auth.js';
 import { createPage, getPage, savePage, createHistorySnapshot, compactHistory, updatePageTitle, deletePage, restorePage, getDeletedPages, permanentlyDeletePage, getChildren, subscribeToPage } from './firebase/firestore.js';
-import { createEditor, setContent, getMarkdown, setEditable, destroyEditor, createFormatToolbar } from './editor/editor.js';
+import { createEditor, setContent, getMarkdown, setEditable, destroyEditor, createFormatToolbar, getProvider } from './editor/editor.js';
+import { joinPage, leavePage, subscribeToPresence } from './firebase/presence.js';
 import { initSidebar, setActivePage, getBreadcrumb } from './components/sidebar.js';
 import { loadHistory, toggleHistoryPanel, closeHistoryPanel } from './components/history.js';
 import { promptModal } from './components/modal.js';
@@ -9,6 +10,8 @@ import { promptModal } from './components/modal.js';
 // --- State ---
 let currentPageId = null;
 let currentPageUnsub = null;
+let currentPresenceUnsub = null;
+let currentSessionId = null;
 let formatToolbar = null;
 let historySnapshotInterval = null;
 const SNAPSHOT_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
@@ -27,6 +30,7 @@ const editorEl = document.getElementById('editor');
 const pageTitleInput = document.getElementById('page-title');
 const saveStatus = document.getElementById('save-status');
 const breadcrumbEl = document.getElementById('breadcrumb');
+const collabCursorsEl = document.getElementById('collab-cursors');
 const pageTreeEl = document.getElementById('page-tree');
 const emptyState = document.getElementById('empty-state');
 const userInfoEl = document.getElementById('user-info');
@@ -154,8 +158,15 @@ async function loadPage(pageId) {
     currentPageUnsub();
     currentPageUnsub = null;
   }
+  if (currentPresenceUnsub) {
+    currentPresenceUnsub();
+    currentPresenceUnsub = null;
+  }
+  await leavePage();
   clearInterval(historySnapshotInterval);
   closeHistoryPanel();
+  
+  collabCursorsEl.innerHTML = '';
 
   currentPageId = pageId;
   setActivePage(pageId);
@@ -202,9 +213,13 @@ async function loadPage(pageId) {
     snapshotCurrentPage();
   }, SNAPSHOT_INTERVAL_MS);
 
-  // Snapshot on tab close / browser unload
-  window.removeEventListener('beforeunload', snapshotCurrentPage);
-  window.addEventListener('beforeunload', snapshotCurrentPage);
+  // Handle unload scenario
+  const handleUnload = () => {
+    snapshotCurrentPage();
+    leavePage();
+  };
+  window.removeEventListener('beforeunload', handleUnload);
+  window.addEventListener('beforeunload', handleUnload);
 
   // Subscribe to real-time updates for this page
   currentPageUnsub = subscribeToPage(pageId, (updatedPage) => {
@@ -216,16 +231,47 @@ async function loadPage(pageId) {
       updateBreadcrumb(pageId);
     }
   });
+
+  // Setup presence
+  const user = getCurrentUser();
+  if (user) {
+    currentSessionId = await joinPage(pageId, user);
+  }
+  
+  currentPresenceUnsub = subscribeToPresence(pageId, (users) => {
+    renderPresence(users);
+  });
+}
+
+function renderPresence(users) {
+  if (!collabCursorsEl) return;
+  collabCursorsEl.innerHTML = '';
+  
+  users.forEach(u => {
+    const avatar = document.createElement('div');
+    avatar.className = 'collab-avatar';
+    avatar.style.backgroundColor = u.color;
+    avatar.title = u.email;
+    avatar.textContent = u.initials;
+    collabCursorsEl.appendChild(avatar);
+  });
 }
 
 function showEmptyState() {
   snapshotCurrentPage();
+  leavePage();
+  if (currentPresenceUnsub) {
+    currentPresenceUnsub();
+    currentPresenceUnsub = null;
+  }
   clearInterval(historySnapshotInterval);
   currentPageId = null;
+  currentSessionId = null;
   destroyEditor();
   editorContainer.classList.add('hidden');
   emptyState.classList.remove('hidden');
   breadcrumbEl.innerHTML = '';
+  if (collabCursorsEl) collabCursorsEl.innerHTML = '';
 }
 
 /**

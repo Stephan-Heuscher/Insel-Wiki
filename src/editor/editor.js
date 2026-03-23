@@ -2,6 +2,7 @@
 import { Editor } from '@tiptap/core';
 import { StarterKit } from '@tiptap/starter-kit';
 import { Collaboration } from '@tiptap/extension-collaboration';
+import { CollaborationCursor } from '@tiptap/extension-collaboration-cursor';
 import { Placeholder } from '@tiptap/extension-placeholder';
 import { Image } from '@tiptap/extension-image';
 import { Link } from '@tiptap/extension-link';
@@ -13,6 +14,7 @@ import { TableCell } from '@tiptap/extension-table-cell';
 import { TableHeader } from '@tiptap/extension-table-header';
 import { CodeBlock } from '@tiptap/extension-code-block';
 import * as Y from 'yjs';
+import { FirestoreYjsProvider } from './FirestoreYjsProvider.js';
 
 // For Markdown conversion
 import TurndownService from 'turndown';
@@ -21,6 +23,7 @@ import { promptModal } from '../components/modal.js';
 
 let editor = null;
 let ydoc = null;
+let provider = null;
 let currentPageId = null;
 let saveCallback = null;
 let saveTimeout = null;
@@ -29,16 +32,6 @@ const turndown = new TurndownService({
   headingStyle: 'atx',
   codeBlockStyle: 'fenced',
 });
-
-// Collaboration colors for cursors
-const CURSOR_COLORS = [
-  '#f87171', '#fb923c', '#fbbf24', '#34d399',
-  '#38bdf8', '#818cf8', '#c084fc', '#f472b6',
-];
-
-function getRandomColor() {
-  return CURSOR_COLORS[Math.floor(Math.random() * CURSOR_COLORS.length)];
-}
 
 /**
  * Initialize the editor for a given page
@@ -52,6 +45,9 @@ export function createEditor(element, pageId, userName, onSave) {
 
   // Create Yjs document
   ydoc = new Y.Doc();
+
+  // Create Custom Firestore Provider for robust serverless sync
+  provider = new FirestoreYjsProvider(pageId, ydoc, userName);
 
   const extensions = [
     StarterKit.configure({
@@ -83,6 +79,22 @@ export function createEditor(element, pageId, userName, onSave) {
     Collaboration.configure({
       document: ydoc,
     }),
+    CollaborationCursor.configure({
+      provider,
+      render(user) {
+        const cursor = document.createElement('span');
+        cursor.classList.add('collaboration-cursor__caret');
+        cursor.setAttribute('style', `border-color: ${user.color}`);
+
+        const label = document.createElement('div');
+        label.classList.add('collaboration-cursor__label');
+        label.setAttribute('style', `background-color: ${user.color}`);
+        label.insertBefore(document.createTextNode(user.name), null);
+
+        cursor.insertBefore(label, null);
+        return cursor;
+      },
+    }),
   ];
 
   editor = new Editor({
@@ -110,12 +122,16 @@ export function createEditor(element, pageId, userName, onSave) {
 }
 
 /**
- * Set editor content from Markdown
+ * Set editor content from Markdown. Only runs on initial empty load.
  */
 export function setContent(markdown) {
   if (!editor) return;
-  const html = marked.parse(markdown || '');
-  editor.commands.setContent(html, false);
+  
+  // Only inject content if there are no existing peers mapped and the doc is empty.
+  if (provider && provider.awareness.getStates().size <= 1) {
+    const html = marked.parse(markdown || '');
+    editor.commands.setContent(html, false);
+  }
 }
 
 /**
@@ -145,7 +161,7 @@ export function setEditable(editable) {
 }
 
 /**
- * Destroy the editor instance
+ * Destroy the editor instance and cleanup sync
  */
 export function destroyEditor() {
   clearTimeout(saveTimeout);
@@ -153,11 +169,22 @@ export function destroyEditor() {
     editor.destroy();
     editor = null;
   }
+  if (provider) {
+    provider.destroy();
+    provider = null;
+  }
   if (ydoc) {
     ydoc.destroy();
     ydoc = null;
   }
   currentPageId = null;
+}
+
+/**
+ * Get the current Websocket provider
+ */
+export function getProvider() {
+  return provider;
 }
 
 /**

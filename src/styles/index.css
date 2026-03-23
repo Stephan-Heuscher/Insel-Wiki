@@ -311,17 +311,52 @@ html, body {
 }
 
 .collab-avatar {
-  width: 24px;
-  height: 24px;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.65rem;
+  font-size: 0.7rem;
   font-weight: 600;
   color: white;
   border: 2px solid var(--bg-surface);
   margin-left: -6px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  transition: transform var(--transition-fast), z-index 0s;
+  cursor: default;
+  position: relative;
+  z-index: 1;
+}
+
+.collab-avatar:hover {
+  transform: translateY(-2px);
+  z-index: 10;
+}
+
+/* Avatar tooltip on hover */
+.collab-avatar::after {
+  content: attr(title);
+  position: absolute;
+  bottom: -32px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--transition-fast);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+  border: 1px solid var(--border);
+  z-index: 20;
+}
+
+.collab-avatar:hover::after {
+  opacity: 1;
 }
 
 /* --- Buttons --- */
@@ -577,9 +612,12 @@ html, body {
   margin-top: 4px;
 }
 
-/* Collaboration cursor */
+/* Collaboration cursor & selection */
 .collaboration-cursor__caret {
   border-left: 2px solid;
+  border-right: 2px solid;
+  margin-left: -2px;
+  margin-right: -2px;
   pointer-events: none;
   position: relative;
   word-break: normal;
@@ -587,15 +625,44 @@ html, body {
 
 .collaboration-cursor__label {
   position: absolute;
-  top: -1.5em;
-  left: 0;
-  font-size: 0.7rem;
-  padding: 1px 6px;
-  border-radius: 3px;
+  top: -1.4em;
+  left: -2px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  font-family: var(--font-sans);
+  font-style: normal;
+  line-height: normal;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border-bottom-left-radius: 0;
   color: white;
   white-space: nowrap;
   pointer-events: none;
-  font-weight: 500;
+  user-select: none;
+  z-index: 10;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+  animation: cursorFadeIn 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes cursorFadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Yjs text selection */
+.ProseMirror .selection {
+  background-color: transparent !important;
+}
+
+.ProseMirror .yjs-cursor {
+  position: relative;
+  margin-left: -1px;
+  margin-right: -1px;
+  border-left: 2px solid black;
+  border-right: 2px solid black;
+  border-color: inherit;
+  word-break: normal;
+  pointer-events: none;
 }
 
 /* Placeholder */
