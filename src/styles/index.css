@@ -25,11 +25,11 @@
   --text-muted: #647d75;
   --text-inverse: #04120e;
   
-  /* Accent — Inselspital Red */
-  --accent: #C8102E;
-  --accent-hover: #E2000F;
-  --accent-subtle: rgba(200, 16, 46, 0.15);
-  --accent-glow: rgba(200, 16, 46, 0.25);
+  /* Accent — Warm Teal (harmonises with Burnham green) */
+  --accent: #3DB88C;
+  --accent-hover: #56D4A5;
+  --accent-subtle: rgba(61, 184, 140, 0.15);
+  --accent-glow: rgba(61, 184, 140, 0.25);
   
   /* Status */
   --success: #34d399;
@@ -126,7 +126,7 @@ html, body {
   font-weight: 700;
   font-size: 1.05rem;
   letter-spacing: -0.01em;
-  background: linear-gradient(135deg, #e2000f, #C8102E);
+  background: linear-gradient(135deg, #56D4A5, #3DB88C);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -342,8 +342,8 @@ html, body {
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, #e2000f, #C8102E);
-  color: white;
+  background: linear-gradient(135deg, #56D4A5, #3DB88C);
+  color: #04120e;
   box-shadow: 0 2px 12px var(--accent-glow);
 }
 
@@ -742,7 +742,7 @@ html, body {
 .auth-logo h1 {
   font-size: 1.6rem;
   font-weight: 700;
-  background: linear-gradient(135deg, #e2000f, #C8102E);
+  background: linear-gradient(135deg, #56D4A5, #3DB88C);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
