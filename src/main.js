@@ -134,7 +134,7 @@ function handleAuthChange(user) {
       const name = user.displayName || formatDefaultName(user.email);
       let innerHTML = '';
       if (user.photoURL) {
-        innerHTML = `<img src="${user.photoURL}" class="user-avatar-img" alt="Avatar">`;
+        innerHTML = `<img src="${user.photoURL}" class="user-avatar-img" alt="Avatar" onerror="this.onerror=null; this.src='/favicon.svg';">`;
       } else {
         innerHTML = `<div class="user-avatar-img" style="display:flex;align-items:center;justify-content:center;font-weight:600;color:#fff;background:var(--accent);font-size:0.75rem">${name.charAt(0).toUpperCase()}</div>`;
       }
@@ -186,6 +186,7 @@ function openProfileModal() {
   selectedAvatarFile = null;
   if (user.photoURL) {
     avatarPreviewImg.src = user.photoURL;
+    avatarPreviewImg.onerror = function() { this.onerror=null; this.src='/favicon.svg'; };
     avatarPreviewContainer.style.display = 'flex';
   } else {
     avatarPreviewContainer.style.display = 'none';
@@ -364,6 +365,7 @@ function renderPresence(users) {
       const img = document.createElement('img');
       img.src = u.photoURL;
       img.alt = u.name || u.initials;
+      img.onerror = function() { this.onerror = null; this.src = '/favicon.svg'; };
       avatar.appendChild(img);
     } else {
       avatar.textContent = u.initials;

@@ -77,11 +77,18 @@ export async function getChildren(parentId = null) {
  * Called by the editor's debounced auto-save.
  */
 export async function savePage(pageId, content, title, savedBy = '') {
-  const pageRef = doc(db, PAGES_COLLECTION, pageId);
-  const updates = { updatedAt: serverTimestamp() };
-  if (content !== undefined) updates.content = content;
-  if (title !== undefined) updates.title = title;
-  await updateDoc(pageRef, updates);
+  try {
+    const pageRef = doc(db, PAGES_COLLECTION, pageId);
+    const updates = { updatedAt: serverTimestamp() };
+    if (content !== undefined) updates.content = content;
+    if (title !== undefined) updates.title = title;
+    await updateDoc(pageRef, updates);
+  } catch (err) {
+    console.error('[Insel-Wiki] Save error:', err);
+    if (err.message && err.message.includes('longer than 1048487 bytes')) {
+      alert('Speicherfehler: Der Inhalt der Seite ist zu groß (über 1MB). Bitte reduziere die Menge an eingefügten Bildern.');
+    }
+  }
 }
 
 /**
@@ -89,13 +96,19 @@ export async function savePage(pageId, content, title, savedBy = '') {
  * Called on page leave, periodic interval, or manual trigger.
  */
 export async function createHistorySnapshot(pageId, content, title, savedBy = '') {
-  const historyRef = collection(db, PAGES_COLLECTION, pageId, 'history');
-  await addDoc(historyRef, {
-    content,
-    title: title || '',
-    savedBy,
-    savedAt: serverTimestamp(),
-  });
+  try {
+    const historyRef = collection(db, PAGES_COLLECTION, pageId, 'history');
+    await addDoc(historyRef, {
+      content,
+      title: title || '',
+      savedBy,
+      savedAt: serverTimestamp(),
+    });
+  } catch (err) {
+    console.error('[Insel-Wiki] Snapshot error:', err);
+    // Ignore history snapshot crashes for oversize docs silently to not annoy user twice,
+    // they already get savePage alerts.
+  }
 }
 
 /**

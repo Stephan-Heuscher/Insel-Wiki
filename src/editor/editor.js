@@ -20,6 +20,7 @@ import { FirestoreYjsProvider } from './FirestoreYjsProvider.js';
 import TurndownService from 'turndown';
 import { marked } from 'marked';
 import { promptModal } from '../components/modal.js';
+import { uploadImageFile } from '../firebase/storage.js';
 
 let editor = null;
 let ydoc = null;
@@ -104,6 +105,49 @@ export function createEditor(element, pageId, user, onSave) {
       attributes: {
         class: 'tiptap',
       },
+      handlePaste: (view, event, slice) => {
+        const items = Array.from(event.clipboardData?.items || []);
+        const imageItems = items.filter(item => item.type.startsWith('image/'));
+        if (imageItems.length > 0) {
+          event.preventDefault();
+          imageItems.forEach(async item => {
+            const file = item.getAsFile();
+            if (!file) return;
+            try {
+              const url = await uploadImageFile(file, user?.uid || 'guest');
+              if (editor && url) {
+                editor.chain().focus().setImage({ src: url }).run();
+              }
+            } catch (err) {
+              console.error('Image upload failed', err);
+              alert('Fehler beim Hochladen des Bildes: ' + err.message);
+            }
+          });
+          return true; // prevent default tiptap paste
+        }
+        return false;
+      },
+      handleDrop: (view, event, slice, moved) => {
+        if (!moved && event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files.length > 0) {
+          const files = Array.from(event.dataTransfer.files).filter(file => file.type.startsWith('image/'));
+          if (files.length > 0) {
+            event.preventDefault();
+            files.forEach(async file => {
+              try {
+                const url = await uploadImageFile(file, user?.uid || 'guest');
+                if (editor && url) {
+                  editor.chain().focus().setImage({ src: url }).run();
+                }
+              } catch (err) {
+                console.error('Image upload failed', err);
+                alert('Fehler beim Hochladen des Bildes: ' + err.message);
+              }
+            });
+            return true;
+          }
+        }
+        return false;
+      }
     },
     onUpdate: ({ editor: ed }) => {
       // Debounced auto-save

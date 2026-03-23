@@ -19,3 +19,22 @@ export async function uploadAvatar(file, uid) {
   const url = await getDownloadURL(snapshot.ref);
   return url;
 }
+
+/**
+ * Upload an image file from the editor to Firebase Storage
+ * @param {File} file 
+ * @param {string} uid 
+ * @returns {Promise<string>} Download URL
+ */
+export async function uploadImageFile(file, uid) {
+  if (!file) throw new Error('Keine Datei übergeben');
+  
+  const ext = file.name.split('.').pop() || 'png';
+  const timestamp = Date.now();
+  const path = `images/${uid}_${timestamp}.${ext}`;
+  const storageRef = ref(storage, path);
+  
+  const snapshot = await uploadBytes(storageRef, file);
+  const url = await getDownloadURL(snapshot.ref);
+  return url;
+}
