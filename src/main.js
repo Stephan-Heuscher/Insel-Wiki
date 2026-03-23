@@ -25,6 +25,10 @@ const loginEmailInput = document.getElementById('login-email');
 const loginPasswordInput = document.getElementById('login-password');
 const loginError = document.getElementById('login-error');
 const loginBtn = document.getElementById('login-btn');
+const historyBtn = document.getElementById('history-btn');
+const printBtn = document.getElementById('print-page-btn');
+const addChildBtn = document.getElementById('add-child-btn');
+const deletePageBtn = document.getElementById('delete-page-btn');
 const requestAccessLink = document.getElementById('request-access-link');
 const appEl = document.getElementById('app');
 const editorContainer = document.getElementById('editor-container');
@@ -72,9 +76,10 @@ async function init() {
 
   // Setup action buttons
   document.getElementById('new-page-btn').addEventListener('click', () => handleNewPage(null));
-  document.getElementById('add-child-btn').addEventListener('click', () => handleNewPage(currentPageId));
-  document.getElementById('delete-page-btn').addEventListener('click', handleDeletePage);
-  document.getElementById('history-btn').addEventListener('click', handleHistoryToggle);
+  if (addChildBtn) addChildBtn.addEventListener('click', () => handleNewPage(currentPageId));
+  if (deletePageBtn) deletePageBtn.addEventListener('click', handleDeletePage);
+  if (historyBtn) historyBtn.addEventListener('click', handleHistoryToggle);
+  if (printBtn) printBtn.addEventListener('click', () => window.print());
   document.getElementById('close-history').addEventListener('click', closeHistoryPanel);
   document.getElementById('empty-new-page').addEventListener('click', () => handleNewPage(null));
 
