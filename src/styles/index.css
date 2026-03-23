@@ -1250,13 +1250,16 @@ html, body {
   .app-layout, .main-content, .editor-container, .editor {
     display: block !important;
     height: auto !important;
+    min-height: auto !important;
     overflow: visible !important;
     background: #fff !important;
     color: #000 !important;
     position: static !important;
     padding: 0 !important;
     margin: 0 !important;
-    width: 100% !important;
+    width: auto !important;
+    max-width: 100% !important;
+    float: none !important;
   }
 
   /* Expand Tiptap Editor for printing */
@@ -1303,19 +1306,11 @@ html, body {
   }
 
   /* Print specific typography and elements tweaks */
-  .editor .tiptap h1 { font-size: 18pt; margin-top: 1.5em; page-break-after: avoid; }
-  .editor .tiptap h2 { font-size: 16pt; margin-top: 1.5em; page-break-after: avoid; }
-  .editor .tiptap h3 { font-size: 14pt; margin-top: 1.5em; page-break-after: avoid; }
+  .editor .tiptap h1 { font-size: 18pt; margin-top: 1.5em; }
+  .editor .tiptap h2 { font-size: 16pt; margin-top: 1.5em; }
+  .editor .tiptap h3 { font-size: 14pt; margin-top: 1.5em; }
   .editor .tiptap p { font-size: 11pt; line-height: 1.5; orphans: 3; widows: 3; }
   
-  /* Avoid breaking important blocks */
-  .editor .tiptap pre,
-  .editor .tiptap img,
-  .editor .tiptap table,
-  .editor .tiptap tr {
-    page-break-inside: avoid;
-  }
-
   /* Show link paths when printed for reference */
   .editor .tiptap a[href]::after {
     content: " (" attr(href) ")";
