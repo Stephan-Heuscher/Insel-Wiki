@@ -13,7 +13,8 @@ import {
   setDoc,
   deleteDoc,
   getDocs,
-  limit
+  limit,
+  where
 } from 'firebase/firestore';
 
 export class FirestoreYjsProvider {
@@ -70,9 +71,13 @@ export class FirestoreYjsProvider {
         }
       });
       // Compact: Save new state and delete old updates
-      const newState = Y.encodeStateAsUpdate(this.ydoc);
-      await setDoc(this.stateDocRef, { state: Bytes.fromUint8Array(newState), updatedAt: serverTimestamp() });
-      pendingUpdates.forEach(change => deleteDoc(change.ref).catch(() => {}));
+      try {
+        const newState = Y.encodeStateAsUpdate(this.ydoc);
+        await setDoc(this.stateDocRef, { state: Bytes.fromUint8Array(newState), updatedAt: serverTimestamp() });
+        pendingUpdates.forEach(change => deleteDoc(change.ref).catch(() => {}));
+      } catch (err) {
+        console.error('[FirestoreYjs] Compaction error:', err);
+      }
     }
 
     // Inform editor that binary state load is complete
