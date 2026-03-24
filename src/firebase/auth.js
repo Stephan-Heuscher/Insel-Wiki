@@ -7,7 +7,8 @@ import { auth } from './config.js';
 import {
   signInWithEmailAndPassword,
   signOut,
-  onAuthStateChanged
+  onAuthStateChanged,
+  updateProfile
 } from 'firebase/auth';
 
 // Wiki admin email — receiving end for access requests
@@ -96,4 +97,22 @@ export function initAuth() {
       resolve(user);
     });
   });
+}
+
+/**
+ * Update user profile details (Name, Photo URL)
+ */
+export async function updateUserProfile(displayName, photoURL) {
+  if (!currentUser) throw new Error('Nicht angemeldet.');
+  
+  await updateProfile(currentUser, { displayName, photoURL });
+  
+  // Refresh standard fields so they propagate to state changes
+  // Firebase Auth does not trigger onAuthStateChanged after updateProfile
+  currentUser = { ...currentUser, displayName, photoURL };
+  
+  // Trigger listeners manually
+  authListeners.forEach((cb) => cb(currentUser));
+  
+  return currentUser;
 }

@@ -1,5 +1,5 @@
 // Sidebar component — hierarchical page tree with real-time updates
-import { subscribeToPages, createPage } from '../firebase/firestore.js';
+import { subscribeToPages, createPage, getDeletedPages, restorePage, permanentlyDeletePage, updatePageHierarchy } from '../firebase/firestore.js';
 import { canEdit } from '../firebase/auth.js';
 
 let allPages = [];
@@ -7,6 +7,24 @@ let unsubscribe = null;
 let onNavigateCallback = null;
 let activePageId = null;
 let searchFilter = '';
+let trashExpanded = false;
+let trashContainer = null;
+let lastTreeFingerprint = null;
+let draggedPageId = null;
+const collapsedFolders = new Set();
+
+/**
+ * Get a fingerprint of the tree structure and titles
+ */
+function getTreeFingerprint(pages) {
+  const visibleProps = pages.map(p => ({
+    id: p.id,
+    title: p.title,
+    parentId: p.parentId,
+    order: p.order
+  })).sort((a, b) => a.id.localeCompare(b.id));
+  return JSON.stringify(visibleProps);
+}
 
 /**
  * Initialize sidebar and start listening to page changes
@@ -17,7 +35,18 @@ export function initSidebar(treeContainer, onNavigate) {
   // Listen to real-time page updates
   unsubscribe = subscribeToPages((pages) => {
     allPages = pages;
-    renderTree(treeContainer);
+    
+    // Only re-render tree if structure or titles changed (ignore updatedAt/content changes)
+    const fingerprint = getTreeFingerprint(pages);
+    if (fingerprint !== lastTreeFingerprint) {
+      lastTreeFingerprint = fingerprint;
+      renderTree(treeContainer);
+    }
+
+    // Refresh trash if it's open
+    if (trashExpanded && trashContainer) {
+      renderTrash(trashContainer);
+    }
   });
 
   // Search filtering
@@ -27,6 +56,21 @@ export function initSidebar(treeContainer, onNavigate) {
       searchFilter = e.target.value.toLowerCase();
       renderTree(treeContainer);
     });
+  }
+
+  // Create trash section
+  const sidebar = treeContainer.parentElement;
+  if (sidebar) {
+    trashContainer = document.createElement('div');
+    trashContainer.className = 'trash-section';
+    // Insert before sidebar-footer (if it exists)
+    const footer = sidebar.querySelector('.sidebar-footer');
+    if (footer) {
+      sidebar.insertBefore(trashContainer, footer);
+    } else {
+      sidebar.appendChild(trashContainer);
+    }
+    renderTrashHeader(trashContainer);
   }
 }
 
@@ -108,15 +152,24 @@ function createTreeItem(page, allFilteredPages) {
 
   // Expand button
   if (hasChildren) {
+    const isCollapsed = collapsedFolders.has(page.id);
     const expandBtn = document.createElement('button');
-    expandBtn.className = 'expand-btn expanded';
+    expandBtn.className = `expand-btn ${isCollapsed ? '' : 'expanded'}`;
     expandBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M9 18l6-6-6-6"/></svg>`;
     expandBtn.addEventListener('click', (e) => {
       e.stopPropagation();
+      const willBeCollapsed = expandBtn.classList.contains('expanded');
       expandBtn.classList.toggle('expanded');
+      
       const childContainer = item.querySelector('.tree-children');
       if (childContainer) {
         childContainer.classList.toggle('collapsed');
+      }
+
+      if (willBeCollapsed) {
+        collapsedFolders.add(page.id);
+      } else {
+        collapsedFolders.delete(page.id);
       }
     });
     row.appendChild(expandBtn);
@@ -144,12 +197,104 @@ function createTreeItem(page, allFilteredPages) {
     if (onNavigateCallback) onNavigateCallback(page.id);
   });
 
+  // --- Drag & Drop ---
+  if (canEdit() && !searchFilter) {
+    row.draggable = true;
+
+    row.addEventListener('dragstart', (e) => {
+      draggedPageId = page.id;
+      e.dataTransfer.effectAllowed = 'move';
+      // Slight delay to allow UI to clone the element before hiding it
+      setTimeout(() => row.classList.add('is-dragging'), 0);
+    });
+
+    row.addEventListener('dragend', () => {
+      draggedPageId = null;
+      row.classList.remove('is-dragging');
+      document.querySelectorAll('.tree-item').forEach(el => {
+        el.classList.remove('drop-above', 'drop-below', 'drop-inside');
+      });
+    });
+
+    row.addEventListener('dragover', (e) => {
+      e.preventDefault(); // Necessary to allow dropping
+      if (!draggedPageId || draggedPageId === page.id) return;
+
+      // Prevent dropping a parent into its own child hierarchy
+      let currentParent = page.parentId;
+      while (currentParent) {
+        if (currentParent === draggedPageId) return; // invalid drop target
+        const parentPage = allFilteredPages.find(p => p.id === currentParent);
+        currentParent = parentPage ? parentPage.parentId : null;
+      }
+
+      e.dataTransfer.dropEffect = 'move';
+      
+      const rect = row.getBoundingClientRect();
+      const relativeY = e.clientY - rect.top;
+      
+      row.classList.remove('drop-above', 'drop-below', 'drop-inside');
+      
+      if (relativeY < rect.height * 0.25) {
+        row.dataset.dropAction = 'above';
+        row.classList.add('drop-above');
+      } else if (relativeY > rect.height * 0.75) {
+        row.dataset.dropAction = 'below';
+        row.classList.add('drop-below');
+      } else {
+        row.dataset.dropAction = 'inside';
+        row.classList.add('drop-inside');
+      }
+    });
+
+    row.addEventListener('dragleave', () => {
+      row.classList.remove('drop-above', 'drop-below', 'drop-inside');
+      row.dataset.dropAction = '';
+    });
+
+    row.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      row.classList.remove('drop-above', 'drop-below', 'drop-inside');
+      
+      const dropAction = row.dataset.dropAction;
+      if (!draggedPageId || draggedPageId === page.id || !dropAction) return;
+
+      let newParentId = null;
+      let newOrder = 0;
+
+      if (dropAction === 'inside') {
+        newParentId = page.id;
+        // Place at the end of the new parent's children
+        const targetChildren = allFilteredPages.filter(p => p.parentId === page.id);
+        newOrder = targetChildren.length;
+        
+        // Auto-expand folder on drop
+        collapsedFolders.delete(page.id);
+      } else {
+        newParentId = page.parentId;
+        // Determine the order amongst siblings
+        const siblings = allFilteredPages
+          .filter(p => p.parentId === page.parentId)
+          .sort((a, b) => a.order - b.order);
+        
+        const targetIndex = siblings.findIndex(p => p.id === page.id);
+        newOrder = dropAction === 'above' ? targetIndex : targetIndex + 1;
+      }
+
+      try {
+        await updatePageHierarchy(draggedPageId, newParentId, newOrder);
+      } catch (err) {
+        console.error('Drag and drop error:', err);
+      }
+    });
+  }
+
   item.appendChild(row);
 
   // Render children
   if (hasChildren) {
     const childContainer = document.createElement('div');
-    childContainer.className = 'tree-children';
+    childContainer.className = `tree-children ${collapsedFolders.has(page.id) ? 'collapsed' : ''}`;
     children.forEach((child) => {
       childContainer.appendChild(createTreeItem(child, allFilteredPages));
     });
@@ -166,5 +311,114 @@ export function destroySidebar() {
   if (unsubscribe) {
     unsubscribe();
     unsubscribe = null;
+  }
+}
+
+// --- Trash Section ---
+
+function renderTrashHeader(container) {
+  container.innerHTML = '';
+  const header = document.createElement('div');
+  header.className = 'trash-header';
+  header.innerHTML = `
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/>
+      <path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/>
+    </svg>
+    <span>Papierkorb</span>
+    <svg class="trash-chevron${trashExpanded ? ' expanded' : ''}" width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M9 18l6-6-6-6"/>
+    </svg>
+  `;
+  header.addEventListener('click', () => {
+    trashExpanded = !trashExpanded;
+    renderTrashHeader(container);
+    if (trashExpanded) {
+      renderTrash(container);
+    }
+  });
+  container.appendChild(header);
+
+  if (trashExpanded) {
+    const list = document.createElement('div');
+    list.className = 'trash-list';
+    list.innerHTML = '<div class="trash-loading">Laden…</div>';
+    container.appendChild(list);
+  }
+}
+
+async function renderTrash(container) {
+  let list = container.querySelector('.trash-list');
+  if (!list) {
+    list = document.createElement('div');
+    list.className = 'trash-list';
+    container.appendChild(list);
+  }
+
+  try {
+    const deletedPages = await getDeletedPages();
+    list.innerHTML = '';
+
+    if (deletedPages.length === 0) {
+      list.innerHTML = '<div class="trash-empty">Papierkorb ist leer</div>';
+      return;
+    }
+
+    // Only show top-level deleted pages (whose parent is not also deleted)
+    const deletedIds = new Set(deletedPages.map(p => p.id));
+    const topLevel = deletedPages.filter(p => !p.parentId || !deletedIds.has(p.parentId));
+
+    topLevel.forEach((page) => {
+      const item = document.createElement('div');
+      item.className = 'trash-item';
+
+      const name = document.createElement('span');
+      name.className = 'trash-item-name';
+      name.textContent = page.title || 'Ohne Titel';
+      item.appendChild(name);
+
+      if (canEdit()) {
+        const actions = document.createElement('div');
+        actions.className = 'trash-item-actions';
+
+        const restoreBtn = document.createElement('button');
+        restoreBtn.className = 'btn-icon btn-small';
+        restoreBtn.title = 'Wiederherstellen';
+        restoreBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 105.64-11.36L1 10"/></svg>`;
+        restoreBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          try {
+            await restorePage(page.id);
+            renderTrash(container);
+          } catch (err) {
+            console.error('Restore error:', err);
+          }
+        });
+        actions.appendChild(restoreBtn);
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'btn-icon btn-small btn-danger';
+        deleteBtn.title = 'Endgültig löschen';
+        deleteBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+        deleteBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          if (!confirm('Endgültig löschen? Dies kann nicht rückgängig gemacht werden.')) return;
+          try {
+            await permanentlyDeletePage(page.id);
+            renderTrash(container);
+          } catch (err) {
+            console.error('Permanent delete error:', err);
+          }
+        });
+        actions.appendChild(deleteBtn);
+
+        item.appendChild(actions);
+      }
+
+      list.appendChild(item);
+    });
+  } catch (err) {
+    console.error('Error loading trash:', err);
+    list.innerHTML = '<div class="trash-empty">Fehler beim Laden</div>';
   }
 }

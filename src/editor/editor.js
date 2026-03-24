@@ -2,6 +2,7 @@
 import { Editor } from '@tiptap/core';
 import { StarterKit } from '@tiptap/starter-kit';
 import { Collaboration } from '@tiptap/extension-collaboration';
+import { CollaborationCursor } from '@tiptap/extension-collaboration-cursor';
 import { Placeholder } from '@tiptap/extension-placeholder';
 import { Image } from '@tiptap/extension-image';
 import { Link } from '@tiptap/extension-link';
@@ -12,14 +13,19 @@ import { TableRow } from '@tiptap/extension-table-row';
 import { TableCell } from '@tiptap/extension-table-cell';
 import { TableHeader } from '@tiptap/extension-table-header';
 import { CodeBlock } from '@tiptap/extension-code-block';
+import { CharacterCount } from '@tiptap/extension-character-count';
 import * as Y from 'yjs';
+import { FirestoreYjsProvider } from './FirestoreYjsProvider.js';
 
 // For Markdown conversion
 import TurndownService from 'turndown';
 import { marked } from 'marked';
+import { promptModal } from '../components/modal.js';
+import { uploadImageFile } from '../firebase/storage.js';
 
 let editor = null;
 let ydoc = null;
+let provider = null;
 let currentPageId = null;
 let saveCallback = null;
 let saveTimeout = null;
@@ -29,20 +35,10 @@ const turndown = new TurndownService({
   codeBlockStyle: 'fenced',
 });
 
-// Collaboration colors for cursors
-const CURSOR_COLORS = [
-  '#f87171', '#fb923c', '#fbbf24', '#34d399',
-  '#38bdf8', '#818cf8', '#c084fc', '#f472b6',
-];
-
-function getRandomColor() {
-  return CURSOR_COLORS[Math.floor(Math.random() * CURSOR_COLORS.length)];
-}
-
 /**
  * Initialize the editor for a given page
  */
-export function createEditor(element, pageId, userName, onSave) {
+export function createEditor(element, pageId, user, onSave) {
   // Clean up previous editor
   destroyEditor();
 
@@ -52,10 +48,22 @@ export function createEditor(element, pageId, userName, onSave) {
   // Create Yjs document
   ydoc = new Y.Doc();
 
+  // Create Custom Firestore Provider for robust serverless sync
+  provider = new FirestoreYjsProvider(pageId, ydoc, user);
+  provider.setLoadCallback((hasYjsState) => {
+    // If it's a completely blank/legacy page without Yjs state, 
+    // inject the markdown backup as a starting point.
+    if (!hasYjsState && window.pendingMarkdownInjection !== undefined) {
+      setContent(window.pendingMarkdownInjection);
+    }
+  });
+
   const extensions = [
     StarterKit.configure({
       history: false, // Yjs handles undo/redo
+      undoRedo: false, // Collaboration extension provides its own
       codeBlock: false, // We use the standalone extension
+      link: false, // We configure Link separately below
     }),
     CodeBlock,
     Placeholder.configure({
@@ -77,8 +85,34 @@ export function createEditor(element, pageId, userName, onSave) {
     TableRow,
     TableCell,
     TableHeader,
+    CharacterCount.configure({
+      limit: 100000,
+    }),
     Collaboration.configure({
       document: ydoc,
+    }),
+    CollaborationCursor.configure({
+      provider,
+      user: {
+        name: user.name,
+        color: user.color,
+      },
+      render(cursorUser) {
+        const cursor = document.createElement('span');
+        cursor.classList.add('collaboration-cursor__caret');
+        cursor.setAttribute('style', `border-color: ${cursorUser.color}`);
+
+        const label = document.createElement('div');
+        label.classList.add('collaboration-cursor__label');
+        label.setAttribute('style', `background-color: ${cursorUser.color}`);
+        
+        // Show full name on cursor
+        const displayName = cursorUser.name || 'Gast';
+        label.insertBefore(document.createTextNode(displayName), null);
+
+        cursor.insertBefore(label, null);
+        return cursor;
+      },
     }),
   ];
 
@@ -89,6 +123,49 @@ export function createEditor(element, pageId, userName, onSave) {
       attributes: {
         class: 'tiptap',
       },
+      handlePaste: (view, event, slice) => {
+        const items = Array.from(event.clipboardData?.items || []);
+        const imageItems = items.filter(item => item.type.startsWith('image/'));
+        if (imageItems.length > 0) {
+          event.preventDefault();
+          imageItems.forEach(async item => {
+            const file = item.getAsFile();
+            if (!file) return;
+            try {
+              const url = await uploadImageFile(file, user?.uid || 'guest');
+              if (editor && url) {
+                editor.chain().focus().setImage({ src: url }).run();
+              }
+            } catch (err) {
+              console.error('Image upload failed', err);
+              alert('Fehler beim Hochladen des Bildes: ' + err.message);
+            }
+          });
+          return true; // prevent default tiptap paste
+        }
+        return false;
+      },
+      handleDrop: (view, event, slice, moved) => {
+        if (!moved && event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files.length > 0) {
+          const files = Array.from(event.dataTransfer.files).filter(file => file.type.startsWith('image/'));
+          if (files.length > 0) {
+            event.preventDefault();
+            files.forEach(async file => {
+              try {
+                const url = await uploadImageFile(file, user?.uid || 'guest');
+                if (editor && url) {
+                  editor.chain().focus().setImage({ src: url }).run();
+                }
+              } catch (err) {
+                console.error('Image upload failed', err);
+                alert('Fehler beim Hochladen des Bildes: ' + err.message);
+              }
+            });
+            return true;
+          }
+        }
+        return false;
+      }
     },
     onUpdate: ({ editor: ed }) => {
       // Debounced auto-save
@@ -96,18 +173,26 @@ export function createEditor(element, pageId, userName, onSave) {
       saveTimeout = setTimeout(() => {
         if (saveCallback && currentPageId) {
           const html = ed.getHTML();
-          const markdown = turndown.turndown(html);
+          let markdown = turndown.turndown(html);
+          if (markdown.length > 100000) {
+            markdown = markdown.substring(0, 100000);
+            console.warn('[Insel-Wiki] Saved content exceeded 100,000 characters and was truncated.');
+          }
           saveCallback(currentPageId, markdown);
         }
       }, 1500);
     },
   });
 
+  // Start initialization of async Provider load
+  provider.init();
+
   return editor;
 }
 
 /**
- * Set editor content from Markdown
+ * Set editor content from Markdown. 
+ * Only runs on initial empty load if no Yjs state exists.
  */
 export function setContent(markdown) {
   if (!editor) return;
@@ -142,7 +227,7 @@ export function setEditable(editable) {
 }
 
 /**
- * Destroy the editor instance
+ * Destroy the editor instance and cleanup sync
  */
 export function destroyEditor() {
   clearTimeout(saveTimeout);
@@ -150,11 +235,22 @@ export function destroyEditor() {
     editor.destroy();
     editor = null;
   }
+  if (provider) {
+    provider.destroy();
+    provider = null;
+  }
   if (ydoc) {
     ydoc.destroy();
     ydoc = null;
   }
   currentPageId = null;
+}
+
+/**
+ * Get the current Websocket provider
+ */
+export function getProvider() {
+  return provider;
 }
 
 /**
@@ -195,7 +291,7 @@ export function createFormatToolbar(container) {
   container.insertBefore(toolbar, container.firstChild);
 
   // Bind click events
-  toolbar.addEventListener('click', (e) => {
+  toolbar.addEventListener('click', async (e) => {
     const btn = e.target.closest('.format-btn');
     if (!btn || !editor) return;
 
@@ -217,12 +313,12 @@ export function createFormatToolbar(container) {
       case 'codeBlock': chain.toggleCodeBlock().run(); break;
       case 'horizontalRule': chain.setHorizontalRule().run(); break;
       case 'link': {
-        const url = prompt('URL eingeben:');
+        const url = await promptModal('URL eingeben:', 'https://...');
         if (url) chain.setLink({ href: url }).run();
         break;
       }
       case 'image': {
-        const src = prompt('Bild-URL eingeben:');
+        const src = await promptModal('Bild-URL eingeben:', 'https://...');
         if (src) chain.setImage({ src }).run();
         break;
       }
