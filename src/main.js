@@ -2,7 +2,7 @@
 import { initAuth, onAuthChange, login, logout, isLoggedIn, canEdit, getCurrentUser, getAccessRequestLink, updateUserProfile } from './firebase/auth.js';
 import { uploadAvatar } from './firebase/storage.js';
 import { formatDefaultName } from './utils/string.js';
-import { createPage, getPage, savePage, createHistorySnapshot, compactHistory, updatePageTitle, deletePage, restorePage, getDeletedPages, permanentlyDeletePage, getChildren, subscribeToPage } from './firebase/firestore.js';
+import { createPage, getPage, savePage, createHistorySnapshot, compactHistory, updatePageTitle, deletePage, restorePage, getDeletedPages, permanentlyDeletePage, getChildren, subscribeToPage, createRegistrationRequest, subscribeToRegistrationRequest, cancelRegistrationRequest } from './firebase/firestore.js';
 import { createEditor, setContent, getMarkdown, setEditable, destroyEditor, createFormatToolbar, getProvider } from './editor/editor.js';
 import { joinPage, leavePage, subscribeToPresence, getColorForEmail } from './firebase/presence.js';
 import { initSidebar, setActivePage, getBreadcrumb } from './components/sidebar.js';
@@ -25,6 +25,27 @@ const loginEmailInput = document.getElementById('login-email');
 const loginPasswordInput = document.getElementById('login-password');
 const loginError = document.getElementById('login-error');
 const loginBtn = document.getElementById('login-btn');
+
+// --- Registration DOM Elements ---
+const registerForm = document.getElementById('register-form');
+const registerEmailInput = document.getElementById('register-email');
+const registerPasswordInput = document.getElementById('register-password');
+const registerBtn = document.getElementById('register-btn');
+const registerError = document.getElementById('register-error');
+
+const waitingState = document.getElementById('waiting-state');
+const sendTokenEmailBtn = document.getElementById('send-token-email-btn');
+const cancelRegisterBtn = document.getElementById('cancel-register-btn');
+
+const successState = document.getElementById('success-state');
+const successToLoginBtn = document.getElementById('success-to-login-btn');
+
+const showRegisterBtn = document.getElementById('show-register-btn');
+const showLoginBtn = document.getElementById('show-login-btn');
+
+let currentRegistrationToken = null;
+let currentRegistrationUnsub = null;
+
 const historyBtn = document.getElementById('history-btn');
 const printBtn = document.getElementById('print-page-btn');
 const addChildBtn = document.getElementById('add-child-btn');
@@ -63,6 +84,32 @@ async function init() {
 
   // Setup login form
   loginForm.addEventListener('submit', handleLogin);
+
+  // Setup registration flow
+  if (showRegisterBtn) {
+    showRegisterBtn.addEventListener('click', () => {
+      loginForm.classList.add('hidden');
+      registerForm.classList.remove('hidden');
+    });
+  }
+  if (showLoginBtn) {
+    showLoginBtn.addEventListener('click', () => {
+      registerForm.classList.add('hidden');
+      loginForm.classList.remove('hidden');
+    });
+  }
+  if (registerForm) {
+    registerForm.addEventListener('submit', handleRegister);
+  }
+  if (cancelRegisterBtn) {
+    cancelRegisterBtn.addEventListener('click', handleCancelRegistration);
+  }
+  if (successToLoginBtn) {
+    successToLoginBtn.addEventListener('click', () => {
+      successState.classList.add('hidden');
+      loginForm.classList.remove('hidden');
+    });
+  }
 
   // Setup logout
   document.getElementById('logout-btn').addEventListener('click', handleLogout);
@@ -170,6 +217,103 @@ async function handleLogin(e) {
     loginBtn.disabled = false;
     loginBtn.textContent = 'Anmelden';
   }
+}
+
+// --- Registration Flow ---
+function generateToken() {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let token = 'TOKEN-';
+  for (let i = 0; i < 6; i++) {
+    token += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return token;
+}
+
+async function handleRegister(e) {
+  e.preventDefault();
+  registerError.classList.add('hidden');
+  registerBtn.disabled = true;
+  registerBtn.textContent = 'Bereite vor…';
+
+  const email = registerEmailInput.value;
+  const password = registerPasswordInput.value;
+
+  if (!email.endsWith('@insel.ch')) {
+    registerError.textContent = 'Nur @insel.ch E-Mail-Adressen sind zugelassen.';
+    registerError.classList.remove('hidden');
+    registerBtn.disabled = false;
+    registerBtn.textContent = 'Registrieren';
+    return;
+  }
+
+  if (password.length < 6) {
+    registerError.textContent = 'Das Passwort muss mindestens 6 Zeichen lang sein.';
+    registerError.classList.remove('hidden');
+    registerBtn.disabled = false;
+    registerBtn.textContent = 'Registrieren';
+    return;
+  }
+
+  try {
+    currentRegistrationToken = generateToken();
+    await createRegistrationRequest(currentRegistrationToken, email, password);
+
+    // Prepare mailto link
+    const subject = encodeURIComponent(`Wiki Registration: ${currentRegistrationToken}`);
+    const body = encodeURIComponent(`Senden Sie diese E-Mail unverändert ab, um Ihren Account zu aktivieren.\n\nToken: ${currentRegistrationToken}`);
+    sendTokenEmailBtn.href = `mailto:stephansdigitalassistent@gmail.com?subject=${subject}&body=${body}`;
+
+    // Switch UI
+    registerForm.classList.add('hidden');
+    waitingState.classList.remove('hidden');
+
+    // Subscribe to status changes
+    currentRegistrationUnsub = subscribeToRegistrationRequest(currentRegistrationToken, (data) => {
+      if (!data) return; // Deleted / Cancelled
+
+      if (data.status === 'approved') {
+        // Registration successful
+        waitingState.classList.add('hidden');
+        successState.classList.remove('hidden');
+        if (currentRegistrationUnsub) {
+          currentRegistrationUnsub();
+          currentRegistrationUnsub = null;
+        }
+        currentRegistrationToken = null;
+        // Clean up inputs
+        registerEmailInput.value = '';
+        registerPasswordInput.value = '';
+      } else if (data.status === 'error') {
+        alert('Ein Fehler ist aufgetreten: ' + (data.error || 'Unbekannt'));
+        handleCancelRegistration();
+      }
+    });
+
+  } catch (err) {
+    registerError.textContent = err.message || 'Fehler beim Vorbereiten der Registrierung.';
+    registerError.classList.remove('hidden');
+  } finally {
+    registerBtn.disabled = false;
+    registerBtn.textContent = 'Registrieren';
+  }
+}
+
+async function handleCancelRegistration() {
+  if (currentRegistrationToken) {
+    try {
+      await cancelRegistrationRequest(currentRegistrationToken);
+    } catch (err) {
+      console.warn('Could not cancel request cleanly', err);
+    }
+    if (currentRegistrationUnsub) {
+      currentRegistrationUnsub();
+      currentRegistrationUnsub = null;
+    }
+    currentRegistrationToken = null;
+  }
+  
+  waitingState.classList.add('hidden');
+  registerForm.classList.remove('hidden');
 }
 
 async function handleLogout() {

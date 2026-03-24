@@ -38,11 +38,72 @@
         <button type="submit" class="btn btn-primary" id="login-btn">Anmelden</button>
         <div class="auth-error hidden" id="login-error"></div>
         <div class="auth-divider"><span>oder</span></div>
-        <a id="request-access-link" class="btn btn-outline" href="#">
-          ✉️ Zugang anfordern
-        </a>
-        <p class="auth-hint">Senden Sie eine E-Mail von Ihrer @insel.ch Adresse mit Ihrem gewünschten Passwort.</p>
+        <button type="button" id="show-register-btn" class="btn btn-outline">
+          Neuen Account erstellen
+        </button>
       </form>
+
+      <!-- Register Form -->
+      <form id="register-form" class="auth-form hidden">
+        <h2>Registrieren</h2>
+        <div class="form-group">
+          <label for="register-email">E-Mail (@insel.ch)</label>
+          <input type="email" id="register-email" placeholder="vorname.name@insel.ch" required />
+        </div>
+        <div class="form-group">
+          <label for="register-password">Gewünschtes Passwort</label>
+          <input type="password" id="register-password" placeholder="Mindestens 6 Zeichen" required minlength="6" />
+        </div>
+        <button type="submit" class="btn btn-primary" id="register-btn">Registrieren</button>
+        <div class="auth-error hidden" id="register-error"></div>
+        <div class="auth-divider"><span>oder</span></div>
+        <button type="button" id="show-login-btn" class="btn btn-outline" style="border: none;">
+          Zurück zur Anmeldung
+        </button>
+      </form>
+
+      <!-- Waiting State -->
+      <div id="waiting-state" class="auth-form hidden" style="text-align: center;">
+        <h2 style="margin-bottom: 8px;">E-Mail bestätigen</h2>
+        <p class="auth-hint" style="text-align: center; margin-bottom: 24px;">
+          Um sicherzustellen, dass Sie ein Mitarbeiter sind, müssen Sie eine kurze E-Mail senden.
+        </p>
+        
+        <div style="background: var(--surface-hover); padding: 16px; border-radius: 8px; margin-bottom: 24px;">
+          <ol style="text-align: left; padding-left: 20px; font-size: 0.9rem; color: var(--text); margin: 0; line-height: 1.5;">
+            <li>Klicken Sie auf den Button unten.</li>
+            <li>Es öffnet sich Ihr E-Mail-Programm.</li>
+            <li>Senden Sie die vorbereitete E-Mail (ohne sie zu ändern) <strong>von Ihrer @insel.ch Adresse</strong> ab.</li>
+          </ol>
+        </div>
+
+        <a id="send-token-email-btn" href="#" class="btn btn-primary" style="margin-bottom: 16px; display: inline-flex; justify-content: center; width: 100%;">
+          ✉️ Bestätigungs-E-Mail senden
+        </a>
+        
+        <div id="registration-spinner" style="margin: 16px 0; font-size: 0.9rem; color: var(--text-secondary); display: flex; align-items: center; justify-content: center; gap: 8px;">
+          <svg class="spinner" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="animation: spin 1s linear infinite;"><circle cx="12" cy="12" r="10" stroke-dasharray="31.4 31.4" stroke-linecap="round"/></svg>
+          Warte auf Ihre E-Mail...
+        </div>
+
+        <button type="button" id="cancel-register-btn" class="btn btn-outline" style="border: none;">
+          Abbrechen
+        </button>
+      </div>
+      
+      <!-- Success State -->
+      <div id="success-state" class="auth-form hidden" style="text-align: center;">
+        <div style="color: #3DB88C; margin-bottom: 16px;">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        </div>
+        <h2 style="margin-bottom: 8px;">Registrierung erfolgreich!</h2>
+        <p class="auth-hint" style="text-align: center; margin-bottom: 24px;">
+          Ihr Account wurde aktiviert. Sie können sich nun einloggen.
+        </p>
+        <button type="button" id="success-to-login-btn" class="btn btn-primary" style="width: 100%;">
+          Zum Login
+        </button>
+      </div>
     </div>
   </div>
 

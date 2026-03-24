@@ -334,3 +334,31 @@ export async function updatePageHierarchy(draggedId, newParentId, newOrder) {
   
   await batch.commit();
 }
+
+// --- Registration Workflow ---
+
+export async function createRegistrationRequest(tokenId, email, password) {
+  const reqRef = doc(db, 'registration_requests', tokenId);
+  await setDoc(reqRef, {
+    email: email,
+    password: password,
+    status: 'pending',
+    createdAt: serverTimestamp()
+  });
+}
+
+export function subscribeToRegistrationRequest(tokenId, callback) {
+  const reqRef = doc(db, 'registration_requests', tokenId);
+  return onSnapshot(reqRef, (snapshot) => {
+    if (snapshot.exists()) {
+      callback(snapshot.data());
+    } else {
+      callback(null); // Document was deleted (could mean success or cancelled)
+    }
+  });
+}
+
+export async function cancelRegistrationRequest(tokenId) {
+  const reqRef = doc(db, 'registration_requests', tokenId);
+  await deleteDoc(reqRef);
+}
