@@ -93,17 +93,21 @@ export function createEditor(element, pageId, user, onSave) {
     }),
     CollaborationCursor.configure({
       provider,
-      render(user) {
+      user: {
+        name: user.name,
+        color: user.color,
+      },
+      render(cursorUser) {
         const cursor = document.createElement('span');
         cursor.classList.add('collaboration-cursor__caret');
-        cursor.setAttribute('style', `border-color: ${user.color}`);
+        cursor.setAttribute('style', `border-color: ${cursorUser.color}`);
 
         const label = document.createElement('div');
         label.classList.add('collaboration-cursor__label');
-        label.setAttribute('style', `background-color: ${user.color}`);
+        label.setAttribute('style', `background-color: ${cursorUser.color}`);
         
         // Show only the given name
-        const givenName = (user.name || 'Gast').split(' ')[0];
+        const givenName = (cursorUser.name || 'Gast').split(' ')[0];
         label.insertBefore(document.createTextNode(givenName), null);
 
         cursor.insertBefore(label, null);
