@@ -111,6 +111,10 @@ export class FirestoreYjsProvider {
     });
 
     // 4. Sync Awareness (Cursors & Selections)
+    // First, clean up all stale awareness docs from old sessions
+    const existingAwareness = await getDocs(this.awarenessRef);
+    existingAwareness.forEach(d => deleteDoc(d.ref).catch(() => {}));
+
     this.awareness.on('update', ({ added, updated, removed }, origin) => {
       if (origin === 'local') {
         clearTimeout(this.awarenessTimeout);
@@ -124,6 +128,14 @@ export class FirestoreYjsProvider {
         }, 300); // Debounce to prevent sluggishness
       }
     });
+
+    // Immediately publish our awareness so other clients see us
+    const initialState = awarenessProtocol.encodeAwarenessUpdate(this.awareness, [this.clientId]);
+    const myDocRef = doc(this.awarenessRef, this.clientId.toString());
+    setDoc(myDocRef, {
+      state: Bytes.fromUint8Array(initialState),
+      updatedAt: serverTimestamp()
+    }).catch(() => {});
 
     this.unsubAwareness = onSnapshot(this.awarenessRef, (snapshot) => {
       snapshot.docChanges().forEach(change => {

@@ -106,9 +106,9 @@ export function createEditor(element, pageId, user, onSave) {
         label.classList.add('collaboration-cursor__label');
         label.setAttribute('style', `background-color: ${cursorUser.color}`);
         
-        // Show only the given name
-        const givenName = (cursorUser.name || 'Gast').split(' ')[0];
-        label.insertBefore(document.createTextNode(givenName), null);
+        // Show full name on cursor
+        const displayName = cursorUser.name || 'Gast';
+        label.insertBefore(document.createTextNode(displayName), null);
 
         cursor.insertBefore(label, null);
         return cursor;
